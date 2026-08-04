@@ -5,14 +5,12 @@ import app from "./app.js";
 import {
     connectDB,
     disconnectDB,
-    prisma,
 } from "./config/prisma.js";
 
 const PORT = Number(process.env.PORT) || 5000;
 
 const httpServer = createServer(app);
 
-let keepAliveTimer = null;
 let isShuttingDown = false;
 
 async function startServer() {
@@ -27,22 +25,6 @@ async function startServer() {
                 `Environment: ${process.env.NODE_ENV || "development"}`
             );
         });
-
-        if (process.env.ENABLE_DATABASE_KEEP_ALIVE === "true") {
-            keepAliveTimer = setInterval(async () => {
-                try {
-                    await prisma.$queryRaw`SELECT 1`;
-                    console.log("Database keep-alive successful");
-                } catch (error) {
-                    console.error(
-                        "Database keep-alive failed:",
-                        error.message
-                    );
-                }
-            }, 4 * 60 * 1000);
-
-            keepAliveTimer.unref();
-        }
 
         console.log("Server started successfully");
     } catch (error) {
@@ -66,7 +48,6 @@ async function shutdown(reason, exitCode = 0) {
     if (isShuttingDown) {
         return;
     }
-
     isShuttingDown = true;
 
     console.log(`${reason}. Shutting down gracefully...`);
