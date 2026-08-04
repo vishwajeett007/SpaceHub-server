@@ -1,99 +1,140 @@
 import "dotenv/config";
-import express from "express";
-import rateLimit from "express-rate-limit";
-import cookieParser from "cookie-parser";
-import cors from "cors";
-import helmet from "helmet";
-import { connectDB, disconnectDB, prisma } from "./config/prisma.js";
-import { constants } from "node:buffer";
-const app = express();
+import { createServer } from "node:http";
 
-app.use(
-    cors({
-        origin: process.env.FRONTEND_URL,
-        credentials: true,
-    })
-);
+import app from "./app.js";
+import {
+    connectDB,
+    disconnectDB,
+    prisma,
+} from "./config/prisma.js";
 
-app.set("trust proxy", process.env.NODE_ENV === "production");
+const PORT = Number(process.env.PORT) || 5000;
 
-app.use(helmet());
-app.use(express.json({ limit: "10kb" }));
-app.use(express.urlencoded({ extended: true, limit: "10kb" }));
-app.use(cookieParser());
-app.use(rateLimit({
-    windowMs: 15 * 60 * 1000,
-    limit: 100,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    message: "Too many requests, please try again later",
-}));
+const httpServer = createServer(app);
 
+let keepAliveTimer = null;
+let isShuttingDown = false;
 
 async function startServer() {
     try {
         await connectDB();
-        console.log("Database connected");
-        app.listen(process.env.PORT, () => {
-            console.log(`Server is running on port ${process.env.PORT}`);
+
+        console.log("Database connected successfully");
+
+        httpServer.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+            console.log(
+                `Environment: ${process.env.NODE_ENV || "development"}`
+            );
         });
-        keepAliveTimer = setInterval(async () => {
-            try {
-                await prisma.$queryRaw`SELECT 1`;
-                console.log("Neon keep-alive successful");
-            } catch (error) {
-                console.error("Neon keep-alive failed:", error.message);
-            }
-        }, 4 * 60 * 1000);
-        console.log("Server started successfully")
+
+        if (process.env.ENABLE_DATABASE_KEEP_ALIVE === "true") {
+            keepAliveTimer = setInterval(async () => {
+                try {
+                    await prisma.$queryRaw`SELECT 1`;
+                    console.log("Database keep-alive successful");
+                } catch (error) {
+                    console.error(
+                        "Database keep-alive failed:",
+                        error.message
+                    );
+                }
+            }, 4 * 60 * 1000);
+
+            keepAliveTimer.unref();
+        }
+
+        console.log("Server started successfully");
     } catch (error) {
-        console.log("failed to start the server", error)
+        console.error("Failed to start the server:", error);
+
+        try {
+            await disconnectDB();
+        } catch (disconnectError) {
+            console.error(
+                "Failed to disconnect database:",
+                disconnectError
+            );
+        }
+
         process.exit(1);
     }
 }
 
+
 async function shutdown(reason, exitCode = 0) {
+    if (isShuttingDown) {
+        return;
+    }
+
+    isShuttingDown = true;
+
     console.log(`${reason}. Shutting down gracefully...`);
 
     if (keepAliveTimer) {
         clearInterval(keepAliveTimer);
+        keepAliveTimer = null;
     }
 
-    if (server) {
-        server.close(async () => {
-            console.log("HTTP server closed");
+    const forceShutdownTimer = setTimeout(() => {
+        console.error("Graceful shutdown timed out. Forcing exit.");
+        process.exit(1);
+    }, 10_000);
 
+    forceShutdownTimer.unref();
+
+    const finishShutdown = async () => {
+        try {
             await disconnectDB();
-
             console.log("Database disconnected");
-            process.exit(exitCode);
-        });
+        } catch (error) {
+            console.error(
+                "Error while disconnecting database:",
+                error
+            );
 
+            exitCode = 1;
+        } finally {
+            clearTimeout(forceShutdownTimer);
+            process.exit(exitCode);
+        }
+    };
+
+    if (!httpServer.listening) {
+        await finishShutdown();
         return;
     }
 
-    await disconnectDB();
-    process.exit(exitCode);
+    httpServer.close(async (error) => {
+        if (error) {
+            console.error("Error closing HTTP server:", error);
+            exitCode = 1;
+        } else {
+            console.log("HTTP server closed");
+        }
+
+        await finishShutdown();
+    });
 }
 
-process.on("unhandledRejection", (error) => {
-    console.error("Unhandled rejection:", error);
+process.on("SIGTERM", () => {
+    void shutdown("SIGTERM received");
+});
 
-    shutdown("Unhandled rejection", 1);
+process.on("SIGINT", () => {
+    void shutdown("SIGINT received");
+});
+
+
+process.on("unhandledRejection", (reason) => {
+    console.error("Unhandled promise rejection:", reason);
+
+    void shutdown("Unhandled promise rejection", 1);
 });
 
 process.on("uncaughtException", (error) => {
     console.error("Uncaught exception:", error);
-
-    shutdown("Uncaught exception", 1);
-});
-
-process.on("SIGTERM", () => {
-    shutdown("SIGTERM received");
-});
-
-process.on("SIGINT", () => {
-    shutdown("SIGINT received");
+    process.exit(1);
 });
 
 startServer();
