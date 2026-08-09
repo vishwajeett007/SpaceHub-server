@@ -26,8 +26,23 @@ export const getMyCommunitiesHandler = async (req, res, next) => {
     if (!userId) {
       return sendResponse(res, HTTP_STATUS.OK, "Joined communities retrieved", []);
     }
-    const communities = await communityService.getUserJoinedCommunities(userId);
+    const isPrivateFilter = req.query.isPrivate === 'true' ? true : req.query.isPrivate === 'false' ? false : null;
+    const communities = await communityService.getUserJoinedCommunities(userId, isPrivateFilter);
     return sendResponse(res, HTTP_STATUS.OK, "Joined communities retrieved", communities);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getLocalGroupsHandler = async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return sendResponse(res, HTTP_STATUS.OK, "Local groups retrieved", []);
+    }
+    // Local groups are private communities (isPrivate: true)
+    const groups = await communityService.getUserJoinedCommunities(userId, true);
+    return sendResponse(res, HTTP_STATUS.OK, "Local groups retrieved", groups);
   } catch (error) {
     next(error);
   }

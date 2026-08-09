@@ -19,3 +19,13 @@ export const updateProfileHandler = async (req, res, next) => {
     next(error);
   }
 };
+
+export const deleteAccountHandler = async (req, res, next) => {
+  try {
+    const { currentPassword } = req.body;
+    await userService.deleteUserAccount(req.user.id, currentPassword);
+    return sendResponse(res, HTTP_STATUS.OK, "Account deleted successfully");
+  } catch (error) {
+    next(error);
+  }
+};

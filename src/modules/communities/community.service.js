@@ -44,20 +44,27 @@ export const createCommunity = async (ownerId, { name, description, avatarUrl, i
   return community;
 };
 
-export const getUserJoinedCommunities = async (userId) => {
+export const getUserJoinedCommunities = async (userId, isPrivateFilter = null) => {
+  const whereCondition = {
+    OR: [
+      { ownerId: userId },
+      { members: { some: { userId, role: { not: ROLES.PENDING } } } }
+    ]
+  };
+
+  if (isPrivateFilter !== null) {
+    whereCondition.isPrivate = isPrivateFilter;
+  }
+
   const communities = await prisma.community.findMany({
-    where: {
-      OR: [
-        { ownerId: userId },
-        { members: { some: { userId, role: { not: ROLES.PENDING } } } }
-      ]
-    },
+    where: whereCondition,
     select: {
       id: true,
       name: true,
       slug: true,
       description: true,
       avatarUrl: true,
+      bannerUrl: true,
       isPrivate: true,
       ownerId: true,
       createdAt: true,
@@ -514,4 +521,146 @@ export const rejectCommunityJoinRequest = async (adminUserId, payload) => {
   return await prisma.communityMember.delete({
     where: { id: memberRecord.id },
   });
+};
+
+export const updateMemberRole = async (communityId, targetUserEmail, newRole) => {
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: targetUserEmail },
+        { username: targetUserEmail },
+        { id: targetUserEmail },
+      ],
+    },
+  });
+  if (!user) {
+    throw new AppError("Target user not found", HTTP_STATUS.NOT_FOUND);
+  }
+
+  const community = await prisma.community.findFirst({
+    where: {
+      OR: [
+        { id: communityId },
+        { slug: communityId },
+        { name: communityId },
+      ],
+    },
+  });
+
+  if (!community) {
+    throw new AppError("Community not found", HTTP_STATUS.NOT_FOUND);
+  }
+
+  let validRole = String(newRole).toUpperCase();
+  if (validRole === 'WORKSPACE_OWNER' || validRole === 'OWNER') {
+    validRole = ROLES.ADMIN;
+  } else if (validRole !== ROLES.ADMIN && validRole !== ROLES.MEMBER) {
+    validRole = ROLES.MEMBER;
+  }
+
+  if (community.ownerId === user.id) {
+    throw new AppError("Cannot modify community owner role", HTTP_STATUS.BAD_REQUEST);
+  }
+
+  const existingMember = await prisma.communityMember.findUnique({
+    where: {
+      userId_communityId: { userId: user.id, communityId: community.id },
+    },
+  });
+
+  if (existingMember) {
+    return await prisma.communityMember.update({
+      where: { id: existingMember.id },
+      data: { role: validRole },
+    });
+  } else {
+    return await prisma.communityMember.create({
+      data: {
+        userId: user.id,
+        communityId: community.id,
+        role: validRole,
+      },
+    });
+  }
+};
+
+export const updateCommunityProfile = async (communityId, { name, description, avatarUrl, bannerUrl }) => {
+  const community = await prisma.community.findFirst({
+    where: {
+      OR: [
+        { id: communityId },
+        { slug: communityId },
+        { name: communityId },
+      ],
+    },
+  });
+
+  if (!community) {
+    throw new AppError("Community not found", HTTP_STATUS.NOT_FOUND);
+  }
+
+  const dataToUpdate = {};
+  if (name) dataToUpdate.name = name;
+  if (description !== undefined) dataToUpdate.description = description;
+  if (avatarUrl) dataToUpdate.avatarUrl = avatarUrl;
+
+  const updated = await prisma.community.update({
+    where: { id: community.id },
+    data: dataToUpdate,
+  });
+
+  return updated;
+};
+
+export const removeMemberFromCommunity = async (communityId, targetUserEmail) => {
+  const user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { email: targetUserEmail },
+        { username: targetUserEmail },
+        { id: targetUserEmail },
+      ],
+    },
+  });
+  if (!user) {
+    throw new AppError("User not found", HTTP_STATUS.NOT_FOUND);
+  }
+  const community = await prisma.community.findFirst({
+    where: {
+      OR: [
+        { id: communityId },
+        { slug: communityId },
+        { name: communityId },
+      ],
+    },
+  });
+  if (!community) {
+    throw new AppError("Community not found", HTTP_STATUS.NOT_FOUND);
+  }
+  await prisma.communityMember.deleteMany({
+    where: {
+      userId: user.id,
+      communityId: community.id,
+    },
+  });
+  return { success: true };
+};
+
+export const deleteCommunityByNameOrId = async (identifier) => {
+  const community = await prisma.community.findFirst({
+    where: {
+      OR: [
+        { id: identifier },
+        { slug: identifier },
+        { name: { equals: identifier, mode: "insensitive" } },
+      ],
+    },
+  });
+  if (!community) {
+    throw new AppError("Community not found", HTTP_STATUS.NOT_FOUND);
+  }
+  await prisma.community.delete({
+    where: { id: community.id },
+  });
+  return { success: true };
 };

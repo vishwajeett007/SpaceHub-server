@@ -6,4 +6,7 @@ export const updateProfileSchema = z.object({
   avatarUrl: z.string().url().optional().or(z.literal("")),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  currentPassword: z.string().optional(),
+  newPassword: z.string().optional(),
+  email: z.string().email().optional(),
 });

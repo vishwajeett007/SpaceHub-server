@@ -1,10 +1,13 @@
 import { Router } from "express";
-import { getProfileHandler, updateProfileHandler } from "./user.controller.js";
+import { getProfileHandler, updateProfileHandler, deleteAccountHandler } from "./user.controller.js";
 import { updateProfileSchema } from "./user.schema.js";
 import { validateRequest } from "../../shared/middlewares/validateRequest.js";
 import { protect } from "../../shared/middlewares/authMiddleware.js";
 import { sendResponse } from "../../shared/utils/apiResponse.js";
 import { HTTP_STATUS } from "../../shared/constants/httpStatusCodes.js";
+import { upload } from "../../shared/middlewares/uploadMiddleware.js";
+import { uploadFileToCloudinary } from "../../config/cloudinary.js";
+import * as userService from "./user.service.js";
 
 const router = Router();
 
@@ -21,25 +24,55 @@ router.put("/updateProfile", validateRequest(updateProfileSchema), updateProfile
 router.post("/set-username", updateProfileHandler);
 
 // Avatar & Cover Uploads
-router.post("/avatar", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Avatar uploaded successfully", {
-    avatarUrl: req.user.avatarUrl || "https://spacehub.monu14.me/default-avatar.png",
-  });
+router.post("/avatar", upload.single("file"), async (req, res, next) => {
+  try {
+    let avatarUrl = req.user.avatarUrl;
+    if (req.file) {
+      const cloudUrl = await uploadFileToCloudinary(req.file, "avatars");
+      if (cloudUrl) {
+        avatarUrl = cloudUrl;
+        await userService.updateUserProfile(req.user.id, { avatarUrl });
+      }
+    }
+    return sendResponse(res, HTTP_STATUS.OK, "Avatar uploaded successfully", {
+      avatarUrl,
+      avatarPreviewUrl: avatarUrl,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
-router.post("/cover", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Cover photo uploaded successfully", {
-    coverUrl: "https://spacehub.monu14.me/default-cover.png",
-  });
+router.post("/cover", upload.single("file"), async (req, res, next) => {
+  try {
+    let coverUrl = null;
+    if (req.file) {
+      coverUrl = await uploadFileToCloudinary(req.file, "covers");
+    }
+    return sendResponse(res, HTTP_STATUS.OK, "Cover photo uploaded successfully", {
+      coverUrl,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // File Uploads & Download URLs
-router.post("/upload-and-get-url", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "File uploaded successfully", {
-    fileKey: "files/sample-file.png",
-    fileUrl: "https://spacehub.monu14.me/files/sample-file.png",
-    fileName: "sample-file.png",
-  });
+router.post("/upload-and-get-url", upload.single("file"), async (req, res, next) => {
+  try {
+    let fileUrl = "https://spacehub.monu14.me/files/sample-file.png";
+    if (req.file) {
+      const cloudUrl = await uploadFileToCloudinary(req.file, "files");
+      if (cloudUrl) fileUrl = cloudUrl;
+    }
+    return sendResponse(res, HTTP_STATUS.OK, "File uploaded successfully", {
+      fileKey: req.file ? req.file.originalname : "files/sample-file.png",
+      fileUrl,
+      fileName: req.file ? req.file.originalname : "sample-file.png",
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.post("/presigned/download", (req, res) => {
@@ -53,8 +86,6 @@ router.post("/send-email", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Welcome email sent successfully");
 });
 
-router.delete("/delete", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Account deleted successfully");
-});
+router.delete("/delete", deleteAccountHandler);
 
 export default router;

@@ -114,6 +114,23 @@ export const deleteRoomForCommunity = async (communityId, roomIdOrName) => {
   writeStorage(storage);
 };
 
+export const renameRoomForCommunity = async (communityId, roomIdOrName, newName) => {
+  const storage = readStorage();
+  const keys = await getCommunityKeys(communityId);
+
+  for (const key of keys) {
+    const list = storage[key] || [];
+    storage[key] = list.map((r) => {
+      if (r.id === roomIdOrName || (r.name || r.roomName || '').toLowerCase() === String(roomIdOrName).toLowerCase()) {
+        return { ...r, name: newName, roomName: newName };
+      }
+      return r;
+    });
+  }
+
+  writeStorage(storage);
+};
+
 export const addChannelToGroupInStorage = (roomCodeOrId, channelName, type = 'chat') => {
   const storage = readStorage();
   let updated = false;
