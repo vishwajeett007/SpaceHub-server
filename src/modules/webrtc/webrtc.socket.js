@@ -4,11 +4,45 @@ export const initializeWebRTCSockets = (io) => {
   io.on("connection", (socket) => {
     // WebRTC Signaling: Join Voice Room
     socket.on("webrtc_join_room", async ({ roomId, userId }) => {
+      if (!roomId || !userId) return;
+
+      // Leave any previous voice rooms first
+      socket.rooms.forEach((rId) => {
+        if (rId !== socket.id && rId !== roomId) {
+          removeVoiceSession(rId, userId);
+          io.to(rId).emit("webrtc_user_left", {
+            userId,
+            socketId: socket.id,
+            roomId: rId,
+          });
+          socket.leave(rId);
+        }
+      });
+
       socket.join(roomId);
       socket.userId = userId;
       socket.roomId = roomId;
 
       await getOrCreateVoiceSession(roomId, userId);
+
+      // Fetch all existing active sockets currently in the room
+      const roomSockets = await io.in(roomId).fetchSockets();
+
+      // Deduplicate peers by userId and exclude self
+      const uniquePeersMap = new Map();
+      roomSockets.forEach((s) => {
+        if (s.id !== socket.id && s.userId && s.userId !== userId) {
+          uniquePeersMap.set(s.userId, s.id);
+        }
+      });
+
+      const existingPeers = Array.from(uniquePeersMap.entries()).map(([peerUserId, peerSocketId]) => ({
+        userId: peerUserId,
+        socketId: peerSocketId,
+      }));
+
+      // Send existing active members list to the newly joined client
+      socket.emit("webrtc_existing_users", existingPeers);
 
       // Notify other peers in the room that a new user joined
       socket.to(roomId).emit("webrtc_user_joined", {
@@ -16,7 +50,7 @@ export const initializeWebRTCSockets = (io) => {
         socketId: socket.id,
       });
 
-      console.log(`🎙️ WebRTC Peer ${userId} (${socket.id}) joined room: ${roomId}`);
+      console.log(`🎙️ WebRTC Peer ${userId} (${socket.id}) joined room: ${roomId}. Active peers: ${existingPeers.length}`);
     });
 
     // WebRTC Signaling: Forward SDP Offer
@@ -57,27 +91,45 @@ export const initializeWebRTCSockets = (io) => {
       });
     });
 
+    // WebRTC Signaling: Toggle Video Camera State
+    socket.on("webrtc_video_status", ({ roomId, isVideoOn }) => {
+      socket.to(roomId).emit("webrtc_peer_video_changed", {
+        userId: socket.userId,
+        isVideoOn,
+      });
+    });
+
+    const handleLeave = () => {
+      const userId = socket.userId;
+      const socketId = socket.id;
+
+      if (!userId) return;
+
+      socket.rooms.forEach((roomId) => {
+        if (roomId !== socket.id) {
+          removeVoiceSession(roomId, userId);
+
+          // Broadcast user left event to all remaining peers in room
+          io.to(roomId).emit("webrtc_user_left", {
+            userId,
+            socketId,
+            roomId,
+          });
+
+          console.log(`👋 WebRTC Peer ${userId} (${socketId}) left room: ${roomId}`);
+        }
+      });
+    };
+
     // WebRTC Signaling: Leave Voice Room
     socket.on("webrtc_leave_room", () => {
-      if (socket.roomId && socket.userId) {
-        removeVoiceSession(socket.roomId, socket.userId);
-        socket.to(socket.roomId).emit("webrtc_user_left", {
-          userId: socket.userId,
-          socketId: socket.id,
-        });
+      handleLeave();
+      if (socket.roomId) {
         socket.leave(socket.roomId);
-        console.log(`👋 WebRTC Peer ${socket.userId} left room: ${socket.roomId}`);
+        socket.roomId = null;
       }
     });
 
-    socket.on("disconnect", () => {
-      if (socket.roomId && socket.userId) {
-        removeVoiceSession(socket.roomId, socket.userId);
-        socket.to(socket.roomId).emit("webrtc_user_left", {
-          userId: socket.userId,
-          socketId: socket.id,
-        });
-      }
-    });
+    socket.on("disconnecting", handleLeave);
   });
 };

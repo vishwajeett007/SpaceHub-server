@@ -15,13 +15,18 @@ if (env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
 }
 
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(
   cors({
-    origin: env.FRONTEND_URL,
+    origin: (origin, callback) => callback(null, true),
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
   })
 );
 
@@ -31,6 +36,28 @@ app.get("/health", (req, res) => {
     message: "SpaceHUB backend is healthy",
     timestamp: new Date().toISOString(),
   });
+});
+
+// SockJS info handshake and transport fallback routes for voice rooms
+app.use((req, res, next) => {
+  if (req.path.startsWith("/ws")) {
+    if (req.path === "/ws/info" || req.path.endsWith("/info")) {
+      return res.status(200).json({
+        websocket: true,
+        origins: ["*:*"],
+        cookie_needed: false,
+        entropy: Math.floor(Math.random() * 2147483647),
+      });
+    }
+    if (req.path.includes("/iframe")) {
+      res.setHeader("Content-Type", "text/html");
+      return res.status(200).send("<!DOCTYPE html><html><head><script>document.domain = document.domain;</script></head><body></body></html>");
+    }
+    if (req.path.includes("/xhr") || req.path.includes("/eventsource") || req.path.includes("/jsonp")) {
+      return res.status(200).send("o\n");
+    }
+  }
+  next();
 });
 
 // const globalLimiter = rateLimit({

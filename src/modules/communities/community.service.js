@@ -32,7 +32,6 @@ export const createCommunity = async (ownerId, { name, description, avatarUrl, i
       channels: {
         create: [
           { name: "general", type: "TEXT" },
-          { name: "voice-lounge", type: "VOICE" },
         ],
       },
     },
@@ -46,7 +45,7 @@ export const createCommunity = async (ownerId, { name, description, avatarUrl, i
 };
 
 export const getUserJoinedCommunities = async (userId) => {
-  return await prisma.community.findMany({
+  const communities = await prisma.community.findMany({
     where: {
       OR: [
         { ownerId: userId },
@@ -63,10 +62,19 @@ export const getUserJoinedCommunities = async (userId) => {
       ownerId: true,
       createdAt: true,
       _count: {
-        select: { members: true },
+        select: {
+          members: {
+            where: { role: { not: ROLES.PENDING } }
+          }
+        },
       },
     },
   });
+
+  return communities.map((c) => ({
+    ...c,
+    memberCount: c._count?.members ?? 0,
+  }));
 };
 
 export const getAllPublicCommunities = async (userId = null) => {
@@ -85,7 +93,11 @@ export const getAllPublicCommunities = async (userId = null) => {
         select: { id: true, role: true }
       } : false,
       _count: {
-        select: { members: true },
+        select: {
+          members: {
+            where: { role: { not: ROLES.PENDING } }
+          }
+        },
       },
     },
   });
@@ -94,9 +106,11 @@ export const getAllPublicCommunities = async (userId = null) => {
     const userMembership = userId && c.members ? c.members.find(m => m) : null;
     const isMember = c.ownerId === userId || (userMembership && userMembership.role !== ROLES.PENDING);
     const isPending = userMembership && userMembership.role === ROLES.PENDING;
+    const memberCount = c._count?.members ?? 0;
     const { members, ...rest } = c;
     return {
       ...rest,
+      memberCount,
       isMember,
       isPending,
     };
@@ -123,6 +137,81 @@ export const getCommunityBySlug = async (slug) => {
   }
 
   return community;
+};
+
+export const getCommunityMembers = async (identifier) => {
+  if (!identifier) return [];
+
+  const community = await prisma.community.findFirst({
+    where: {
+      OR: [
+        { id: identifier },
+        { slug: identifier },
+        { name: identifier }
+      ]
+    },
+    select: { id: true, ownerId: true }
+  });
+
+  if (!community) {
+    return [];
+  }
+
+  const members = await prisma.communityMember.findMany({
+    where: {
+      communityId: community.id,
+      role: { not: ROLES.PENDING }
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          avatarUrl: true
+        }
+      }
+    }
+  });
+
+  const memberList = members.map(m => ({
+    id: m.id,
+    memberId: m.id,
+    userId: m.userId,
+    username: m.user?.username,
+    email: m.user?.email,
+    name: [m.user?.firstName, m.user?.lastName].filter(Boolean).join(' ') || m.user?.username || m.user?.email,
+    avatarUrl: m.user?.avatarUrl,
+    avatarPreviewUrl: m.user?.avatarUrl,
+    role: m.userId === community.ownerId ? ROLES.OWNER : m.role,
+    createdAt: m.createdAt
+  }));
+
+  const hasOwner = memberList.some(m => m.userId === community.ownerId);
+  if (!hasOwner && community.ownerId) {
+    const owner = await prisma.user.findUnique({
+      where: { id: community.ownerId },
+      select: { id: true, username: true, email: true, firstName: true, lastName: true, avatarUrl: true }
+    });
+    if (owner) {
+      memberList.unshift({
+        id: `owner-${owner.id}`,
+        memberId: `owner-${owner.id}`,
+        userId: owner.id,
+        username: owner.username,
+        email: owner.email,
+        name: [owner.firstName, owner.lastName].filter(Boolean).join(' ') || owner.username || owner.email,
+        avatarUrl: owner.avatarUrl,
+        avatarPreviewUrl: owner.avatarUrl,
+        role: ROLES.OWNER,
+        createdAt: new Date()
+      });
+    }
+  }
+
+  return memberList;
 };
 
 const notifyAdminsOfJoinRequest = async (requesterId, community, referenceId) => {

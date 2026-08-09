@@ -8,6 +8,7 @@ import webrtcRoutes from "./modules/webrtc/webrtc.routes.js";
 import { protect } from "./shared/middlewares/authMiddleware.js";
 import { sendResponse } from "./shared/utils/apiResponse.js";
 import { HTTP_STATUS } from "./shared/constants/httpStatusCodes.js";
+import { getChannelsForGroup, addChannelToGroupInStorage } from "./modules/communities/communityRoomsStorage.js";
 
 const router = Router();
 
@@ -45,10 +46,29 @@ router.use("/", socialRoutes);
 const voiceRoomRouter = Router();
 voiceRoomRouter.use(protect);
 
+// Helper: Generate a unique janusRoomId scoped to group + room name
+const generateJanusRoomId = (groupId, roomName) => {
+  const combined = `${groupId || ''}::${roomName || ''}`;
+  const hash = combined.split('').reduce((acc, char) => {
+    acc = ((acc << 5) - acc) + char.charCodeAt(0);
+    return acc & acc; // Convert to 32bit integer
+  }, 0);
+  return `vr_${groupId}_${Math.abs(hash).toString(36)}`;
+};
+
 voiceRoomRouter.get("/list/:roomId", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Voice rooms list retrieved", [
-    { id: "vr-1", name: req.params.roomId || "voice-lounge", janusRoomId: "1234" },
-  ]);
+  const groupIdOrCode = req.params.roomId || '';
+  const storedVoiceRooms = groupIdOrCode ? getChannelsForGroup(groupIdOrCode, 'voice') : [];
+  const rooms = storedVoiceRooms.map((name, idx) => {
+    return {
+      id: `vr-${idx}`,
+      name,
+      janusRoomId: generateJanusRoomId(groupIdOrCode, name),
+      chatRoomId: groupIdOrCode,
+      active: true,
+    };
+  });
+  return sendResponse(res, HTTP_STATUS.OK, "Voice rooms list retrieved", rooms);
 });
 
 voiceRoomRouter.get("/list", (req, res) => {
@@ -56,10 +76,18 @@ voiceRoomRouter.get("/list", (req, res) => {
 });
 
 voiceRoomRouter.post("/create", (req, res) => {
+  const roomName = req.query.roomName || req.body?.roomName || "voice-room";
+  const chatRoomId = req.query.chatRoomId || req.body?.chatRoomId;
+  if (chatRoomId && roomName) {
+    addChannelToGroupInStorage(chatRoomId, roomName, "voice");
+  }
+  const janusRoomId = generateJanusRoomId(chatRoomId, roomName);
   return sendResponse(res, HTTP_STATUS.CREATED, "Voice room created successfully", {
-    id: "vr-1",
-    name: req.query.roomName || req.body?.roomName || "voice-lounge",
-    chatRoomId: req.query.chatRoomId || req.body?.chatRoomId,
+    id: `vr-${Date.now()}`,
+    name: roomName,
+    janusRoomId: janusRoomId,
+    chatRoomId: chatRoomId,
+    active: true,
   });
 });
 
@@ -68,9 +96,18 @@ voiceRoomRouter.delete("/delete", (req, res) => {
 });
 
 voiceRoomRouter.post("/join", (req, res) => {
+  const janusRoomId = req.query.janusRoomId || req.body?.janusRoomId || "1234";
+  const displayName = req.query.displayName || req.body?.displayName || "Member";
+  const now = Date.now();
+  const sessionId = Math.floor(now / 1000);
+  const handleId = Math.floor(now % 1000000);
+
   return sendResponse(res, HTTP_STATUS.OK, "Joined voice room successfully", {
-    janusRoomId: req.query.janusRoomId || req.body?.janusRoomId || "1234",
-    displayName: req.query.displayName || req.body?.displayName,
+    janusRoomId: String(janusRoomId),
+    sessionId: sessionId,
+    handleId: handleId,
+    userId: displayName,
+    displayName: displayName,
   });
 });
 

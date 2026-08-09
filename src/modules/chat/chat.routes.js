@@ -9,6 +9,7 @@ import { validateRequest } from "../../shared/middlewares/validateRequest.js";
 import { protect } from "../../shared/middlewares/authMiddleware.js";
 import { sendResponse } from "../../shared/utils/apiResponse.js";
 import { HTTP_STATUS } from "../../shared/constants/httpStatusCodes.js";
+import { addChannelToGroupInStorage, getChannelsForGroup } from "../communities/communityRoomsStorage.js";
 
 const router = Router();
 
@@ -26,13 +27,17 @@ router.post("/rooms/join", (req, res) => {
 router.post("/join", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Joined room successfully", { roomCode: req.body?.roomCode });
 });
-
 // Chatroom endpoints (Support router mounted at /chat or /new-chatroom)
 const handleChatroomCreate = (req, res) => {
+  const channelName = req.body?.name || "general";
+  const roomCode = req.body?.roomCode;
+  if (roomCode && channelName) {
+    addChannelToGroupInStorage(roomCode, channelName, "chat");
+  }
   return sendResponse(res, HTTP_STATUS.CREATED, "Chatroom created successfully", {
-    id: "cr-123",
-    name: req.body?.name || "general",
-    roomCode: req.body?.roomCode,
+    id: `cr-${Date.now()}`,
+    name: channelName,
+    roomCode: roomCode,
   });
 };
 
@@ -40,9 +45,10 @@ router.post("/new-chatroom/create", handleChatroomCreate);
 router.post("/create", handleChatroomCreate);
 
 const handleChatroomSummary = (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Chatroom summary retrieved", [
-    { id: "general", name: "general" },
-  ]);
+  const roomCode = req.query.roomCode || req.params.roomId || '';
+  const storedChatRooms = roomCode ? getChannelsForGroup(roomCode, 'chat') : [];
+  const rooms = storedChatRooms.map((name, idx) => ({ id: `cr-${idx}`, name }));
+  return sendResponse(res, HTTP_STATUS.OK, "Chatroom summary retrieved", rooms);
 };
 
 router.get("/new-chatroom/list/summary", handleChatroomSummary);
@@ -57,9 +63,14 @@ router.delete("/:chatroomId/delete", (req, res) => {
 
 // Voice Rooms Endpoints (Support router mounted at /chat or /voice-room)
 const handleVoiceRoomsList = (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Voice rooms list retrieved", [
-    { id: "vr-1", name: req.params.roomId || "voice-lounge", janusRoomId: "1234" },
-  ]);
+  const groupIdOrCode = req.params.roomId || '';
+  const storedVoiceRooms = groupIdOrCode ? getChannelsForGroup(groupIdOrCode, 'voice') : [];
+  const rooms = storedVoiceRooms.map((name, idx) => ({
+    id: `vr-${idx}`,
+    name,
+    janusRoomId: String(1000 + idx),
+  }));
+  return sendResponse(res, HTTP_STATUS.OK, "Voice rooms list retrieved", rooms);
 };
 
 router.get("/voice-room/list/:roomId", handleVoiceRoomsList);
@@ -68,10 +79,15 @@ router.get("/voice-room/list", handleVoiceRoomsList);
 router.get("/list", handleVoiceRoomsList);
 
 const handleVoiceRoomCreate = (req, res) => {
+  const roomName = req.query.roomName || req.body?.roomName || "voice-room";
+  const chatRoomId = req.query.chatRoomId || req.body?.chatRoomId;
+  if (chatRoomId && roomName) {
+    addChannelToGroupInStorage(chatRoomId, roomName, "voice");
+  }
   return sendResponse(res, HTTP_STATUS.CREATED, "Voice room created successfully", {
-    id: "vr-1",
-    name: req.query.roomName || req.body?.roomName || "voice-lounge",
-    chatRoomId: req.query.chatRoomId || req.body?.chatRoomId,
+    id: `vr-${Date.now()}`,
+    name: roomName,
+    chatRoomId: chatRoomId,
   });
 };
 

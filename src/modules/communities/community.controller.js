@@ -78,3 +78,13 @@ export const rejectJoinRequestHandler = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getCommunityMembersHandler = async (req, res, next) => {
+  try {
+    const identifier = req.params.groupId || req.params.communityId || req.body.communityId || req.body.groupId || req.query.communityId;
+    const members = await communityService.getCommunityMembers(identifier);
+    return sendResponse(res, HTTP_STATUS.OK, "Community members retrieved", { members });
+  } catch (error) {
+    next(error);
+  }
+};

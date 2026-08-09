@@ -18,6 +18,7 @@ const io = new SocketIOServer(httpServer, {
     origin: env.FRONTEND_URL,
     credentials: true,
   },
+  destroyUpgrade: false,
 });
 
 initializeChatSockets(io);
