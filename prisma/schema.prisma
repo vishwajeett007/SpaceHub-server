@@ -46,6 +46,7 @@ model Community {
   slug        String            @unique
   description String?
   avatarUrl   String?
+  bannerUrl   String?
   isPrivate   Boolean           @default(false)
   ownerId     String
   owner       User              @relation("OwnedCommunities", fields: [ownerId], references: [id], onDelete: Cascade)
