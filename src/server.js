@@ -15,7 +15,7 @@ const httpServer = createServer(app);
 
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: env.FRONTEND_URL,
+    origin: [env.FRONTEND_URL, "http://localhost:5173", "http://localhost:5174"],
     credentials: true,
   },
   destroyUpgrade: false,

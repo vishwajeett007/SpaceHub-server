@@ -7,5 +7,5 @@ export const env = {
   DIRECT_URL: process.env.DIRECT_URL,
   JWT_SECRET: process.env.JWT_SECRET || "spacehub_secret_key_change_me_in_prod",
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || "7d",
-  FRONTEND_URL: process.env.FRONTEND_URL || "http://localhost:5173",
+  FRONTEND_URL: process.env.CLIENT_URL || "http://localhost:5173",
 };
