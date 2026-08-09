@@ -1,23 +1,114 @@
 generator client {
-  provider   = "prisma-client"
-  engineType = "client"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  PENDING
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
+}
+
 model User {
-  id           String   @id @default(uuid())
-  username     String   @unique
-  email        String   @unique
-  passwordHash String
-  avatarUrl    String?
-  bio          String?
-  firstName    String?
-  lastName     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String            @id @default(uuid())
+  username          String            @unique
+  email             String            @unique
+  passwordHash      String
+  avatarUrl         String?
+  bio               String?
+  firstName         String?
+  lastName          String?
+  isVerified        Boolean           @default(false)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  memberships       CommunityMember[]
+  messages          Message[]         @relation("SentMessages")
+  receivedDMs       Message[]         @relation("ReceivedMessages")
+  ownedGroups       Community[]       @relation("OwnedCommunities")
+  sentFriendships   Friendship[]      @relation("UserFriendships")
+  receivedFriendships Friendship[]    @relation("TargetFriendships")
 
   @@map("users")
+}
+
+model Community {
+  id          String            @id @default(uuid())
+  name        String
+  slug        String            @unique
+  description String?
+  avatarUrl   String?
+  isPrivate   Boolean           @default(false)
+  ownerId     String
+  owner       User              @relation("OwnedCommunities", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  members     CommunityMember[]
+  channels    Channel[]
+
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String    @id @default(uuid())
+  userId      String
+  communityId String
+  role        Role      @default(MEMBER)
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@map("community_members")
+}
+
+model Channel {
+  id          String      @id @default(uuid())
+  name        String
+  type        ChannelType @default(TEXT)
+  communityId String
+  community   Community   @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  messages    Message[]
+
+  @@map("channels")
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  content    String
+  senderId   String
+  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  channelId  String?
+  channel    Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  receiverId String?
+  receiver   User?    @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("messages")
+}
+
+model Friendship {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("TargetFriendships", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@map("friendships")
 }
