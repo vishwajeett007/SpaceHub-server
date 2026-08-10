@@ -93,20 +93,32 @@ model Channel {
 }
 
 model Message {
-  id         String   @id @default(uuid())
-  content    String
-  senderId   String
-  sender     User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  channelId  String?
-  channel    Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
-  receiverId String?
-  receiver   User?    @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id @default(uuid())
+  content       String?
+  text          String?
+  type          String?  @default("TEXT")
+  fileName      String?
+  fileKey       String?
+  fileUrl       String?
+  contentType   String?
+  senderEmail   String?
+  receiverEmail String?
+  roomCode      String?
+  senderId      String?
+  sender        User?    @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  channelId     String?
+  channel       Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  receiverId    String?
+  receiver      User?    @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([channelId, createdAt])
+  @@index([roomCode, createdAt])
   @@index([senderId, receiverId, createdAt])
   @@index([receiverId, senderId, createdAt])
+  @@index([senderEmail, receiverEmail, createdAt])
+  @@index([receiverEmail, senderEmail, createdAt])
   @@index([createdAt])
   @@map("messages")
 }

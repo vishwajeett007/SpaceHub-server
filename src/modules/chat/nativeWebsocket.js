@@ -3,6 +3,7 @@ import { parse } from "node:url";
 import { prisma } from "../../config/prisma.js";
 import { getPendingCommunityRequests } from "../communities/community.service.js";
 import { getRoomMessagesFromStorage, saveRoomMessageToStorage } from "../communities/communityMessageStorage.js";
+import { getDirectMessagesFromStorage, saveDirectMessageToStorage } from "../social/directMessageStorage.js";
 
 // Store active native WebSocket client connections
 const directChatConnections = new Map();
@@ -117,6 +118,8 @@ export const initializeNativeWebSockets = (httpServer) => {
     if (pathname && (pathname.includes("/direct-chat") || pathname.includes("/chat") || pathname.includes("/ws"))) {
       const rawUserKey = query.senderEmail || query.sender || query.userEmail || query.email || "anonymous";
       const userKey = String(rawUserKey).trim().toLowerCase();
+      const rawReceiverKey = query.receiverEmail || query.friendEmail || query.receiver || query.to;
+      const receiverEmailKey = rawReceiverKey ? String(rawReceiverKey).trim().toLowerCase() : null;
       const roomCode = query.roomCode || query.room;
 
       directChatConnections.set(userKey, ws);
@@ -130,41 +133,63 @@ export const initializeNativeWebSockets = (httpServer) => {
         console.log(`🔌 Client ${userKey} joined room WS: ${roomCode}`);
 
         // Send existing room message history to the newly connected client
-        const history = getRoomMessagesFromStorage(roomCode);
-        if (history && history.length > 0 && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            type: "history",
-            roomCode: roomCode,
-            messages: history,
-          }));
-        }
+        getRoomMessagesFromStorage(roomCode).then((history) => {
+          if (history && history.length > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "history",
+              roomCode: roomCode,
+              messages: history,
+            }));
+          }
+        }).catch(console.error);
+      } else if (receiverEmailKey) {
+        // Direct chat history on WS connection
+        getDirectMessagesFromStorage(userKey, receiverEmailKey).then((history) => {
+          if (history && history.length > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "history",
+              senderEmail: userKey,
+              receiverEmail: receiverEmailKey,
+              messages: history,
+            }));
+          }
+        }).catch(console.error);
       }
 
-      ws.on("message", (rawMessage) => {
+      ws.on("message", async (rawMessage) => {
         try {
           const parsed = JSON.parse(rawMessage.toString());
           const targetRoomCode = parsed.roomCode || roomCode;
           const senderEmail = parsed.senderEmail || parsed.email || userKey;
+          const rawReceiverKey = parsed.receiverEmail || parsed.friendEmail || parsed.receiver || parsed.to || receiverEmailKey;
+          const receiverKey = rawReceiverKey ? String(rawReceiverKey).trim().toLowerCase() : null;
           const senderName = parsed.senderName || parsed.author || (senderEmail ? senderEmail.split('@')[0] : 'User');
           const messageText = parsed.message || parsed.text || parsed.content || "";
+
+          const isFileMsg = String(parsed.type || '').toUpperCase() === 'FILE' || Boolean(parsed.fileKey || parsed.file_key || parsed.fileUrl || parsed.file_url);
 
           const messagePayload = {
             id: parsed.id || `m-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             ...parsed,
             roomCode: targetRoomCode,
-            senderEmail: senderEmail,
-            email: senderEmail,
+            senderEmail: String(senderEmail).trim().toLowerCase(),
+            email: String(senderEmail).trim().toLowerCase(),
+            receiverEmail: receiverKey,
             senderName: senderName,
             author: senderName,
             message: messageText,
             text: messageText,
-            type: parsed.type || "message",
+            content: messageText,
+            type: isFileMsg ? 'FILE' : (parsed.type || "message"),
             timestamp: parsed.timestamp || parsed.createdAt || new Date().toISOString(),
+            createdAt: parsed.timestamp || parsed.createdAt || new Date().toISOString(),
           };
 
-          // Persist message if in a room
+          // Persist message if in a room or direct chat
           if (targetRoomCode) {
-            saveRoomMessageToStorage(targetRoomCode, messagePayload);
+            await saveRoomMessageToStorage(targetRoomCode, messagePayload);
+          } else if (receiverKey) {
+            await saveDirectMessageToStorage(messagePayload);
           }
 
           // Broadcast to all clients connected to this room
@@ -183,9 +208,6 @@ export const initializeNativeWebSockets = (httpServer) => {
           }
 
           // Forward to direct message receiver if present
-          const rawReceiverKey = parsed.receiverEmail || parsed.friendEmail || parsed.receiver || parsed.to;
-          const receiverKey = rawReceiverKey ? String(rawReceiverKey).trim().toLowerCase() : null;
-
           if (receiverKey && directChatConnections.has(receiverKey)) {
             const receiverSocket = directChatConnections.get(receiverKey);
             if (receiverSocket && receiverSocket !== ws && receiverSocket.readyState === WebSocket.OPEN) {

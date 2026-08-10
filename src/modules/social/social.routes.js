@@ -17,6 +17,11 @@ import { protect } from "../../shared/middlewares/authMiddleware.js";
 import { sendResponse } from "../../shared/utils/apiResponse.js";
 import { HTTP_STATUS } from "../../shared/constants/httpStatusCodes.js";
 
+import {
+  getDirectMessagesFromStorage,
+  saveDirectMessageToStorage,
+} from "./directMessageStorage.js";
+
 const router = Router();
 
 router.use(protect);
@@ -45,25 +50,42 @@ router.post("/friends/remove", removeFriendHandler);
 router.post("/remove", removeFriendHandler);
 
 // Direct Friend Messaging & Chat History
-const handleSendMessage = (req, res) => {
-  return sendResponse(res, HTTP_STATUS.CREATED, "Friend message sent successfully", {
-    id: "msg-123",
-    friendEmail: req.body.friendEmail,
-    message: req.body.message,
-    createdAt: new Date().toISOString(),
-  });
+const handleSendMessage = async (req, res) => {
+  const userEmail = req.user?.email || req.body.userEmail || req.body.senderEmail;
+  const friendEmail = req.body.friendEmail || req.body.receiverEmail;
+
+  const payload = {
+    senderEmail: userEmail,
+    receiverEmail: friendEmail,
+    message: req.body.message || req.body.content || req.body.text || "",
+    text: req.body.message || req.body.content || req.body.text || "",
+    content: req.body.message || req.body.content || req.body.text || "",
+    images: Array.isArray(req.body.images) ? req.body.images : [],
+    fileKey: req.body.fileKey || req.body.file_key || null,
+    fileUrl: req.body.fileUrl || req.body.file_url || null,
+    fileName: req.body.fileName || req.body.file_name || null,
+    contentType: req.body.contentType || req.body.content_type || null,
+    type: req.body.type || (req.body.fileKey || req.body.fileUrl ? "FILE" : "message"),
+  };
+
+  const savedMessage = await saveDirectMessageToStorage(payload);
+
+  return sendResponse(res, HTTP_STATUS.CREATED, "Friend message sent successfully", savedMessage || payload);
 };
 
 router.post("/friends/message/send", handleSendMessage);
 router.post("/message/send", handleSendMessage);
 
-router.get("/friends/messages", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Friend messages retrieved", []);
-});
+const handleGetChatHistory = async (req, res) => {
+  const user1 = req.query.user1 || req.query.senderEmail || req.query.userEmail || req.user?.email;
+  const user2 = req.query.user2 || req.query.friendEmail || req.query.receiverEmail;
 
-router.get("/messages/chat", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Chat history retrieved", []);
-});
+  const messages = await getDirectMessagesFromStorage(user1, user2);
+  return sendResponse(res, HTTP_STATUS.OK, "Chat history retrieved", messages);
+};
+
+router.get("/friends/messages", handleGetChatHistory);
+router.get("/messages/chat", handleGetChatHistory);
 
 // Notifications
 router.get("/notifications", getNotificationsHandler);

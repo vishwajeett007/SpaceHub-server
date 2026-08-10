@@ -1,15 +1,24 @@
 import { prisma } from '../../config/prisma.js';
 
-export const getRoomMessagesFromStorage = async (roomCode) => {
-  if (!roomCode) return [];
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+export const getDirectMessagesFromStorage = async (email1, email2) => {
+  const e1 = normalizeEmail(email1);
+  const e2 = normalizeEmail(email2);
+  if (!e1 || !e2) return [];
+
   try {
-    const messages = await prisma.message.findMany({
-      where: { roomCode: String(roomCode) },
+    const dbMessages = await prisma.message.findMany({
+      where: {
+        OR: [
+          { senderEmail: e1, receiverEmail: e2 },
+          { senderEmail: e2, receiverEmail: e1 },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
-      take: 1000,
     });
 
-    return messages.map((m) => ({
+    return dbMessages.map((m) => ({
       id: m.id,
       content: m.content || m.text || '',
       text: m.text || m.content || '',
@@ -21,29 +30,31 @@ export const getRoomMessagesFromStorage = async (roomCode) => {
       contentType: m.contentType,
       senderEmail: m.senderEmail,
       receiverEmail: m.receiverEmail,
-      roomCode: m.roomCode,
+      email: m.senderEmail,
       createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
       timestamp: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
     }));
-  } catch (err) {
-    console.error('Error fetching room messages from database:', err);
+  } catch (dbError) {
+    console.error('Error fetching direct messages from database:', dbError);
     return [];
   }
 };
 
-export const saveRoomMessageToStorage = async (roomCode, messagePayload) => {
-  if (!roomCode || !messagePayload) return null;
+export const saveDirectMessageToStorage = async (messagePayload) => {
+  if (!messagePayload) return null;
+
+  const senderEmail = normalizeEmail(messagePayload.senderEmail || messagePayload.email || messagePayload.sender || '');
+  const receiverEmail = normalizeEmail(messagePayload.receiverEmail || messagePayload.receiver || messagePayload.to || '');
+
+  if (!senderEmail || !receiverEmail) return null;
 
   const content = messagePayload.content || messagePayload.text || messagePayload.message || '';
-  const senderEmail = messagePayload.senderEmail || messagePayload.email || messagePayload.sender || null;
-  const receiverEmail = messagePayload.receiverEmail || messagePayload.receiver || null;
   const messageType = messagePayload.type || (messagePayload.fileKey || messagePayload.fileUrl ? 'FILE' : 'message');
 
   try {
     const created = await prisma.message.create({
       data: {
         id: (messagePayload.id && !messagePayload.id.startsWith('temp')) ? messagePayload.id : undefined,
-        roomCode: String(roomCode),
         content,
         text: messagePayload.text || content,
         type: messageType,
@@ -59,7 +70,9 @@ export const saveRoomMessageToStorage = async (roomCode, messagePayload) => {
     return {
       id: created.id,
       ...messagePayload,
-      roomCode: String(roomCode),
+      senderEmail,
+      receiverEmail,
+      email: senderEmail,
       content: created.content,
       text: created.text || created.content,
       message: created.text || created.content,
@@ -71,8 +84,17 @@ export const saveRoomMessageToStorage = async (roomCode, messagePayload) => {
       createdAt: created.createdAt.toISOString(),
       timestamp: created.createdAt.toISOString(),
     };
-  } catch (err) {
-    console.error('Error saving room message to database:', err);
-    return messagePayload;
+  } catch (dbError) {
+    console.error('Error saving direct message to database:', dbError);
+    const timestamp = messagePayload.timestamp || messagePayload.createdAt || new Date().toISOString();
+    return {
+      id: messagePayload.id || `dm-${Date.now()}`,
+      ...messagePayload,
+      senderEmail,
+      receiverEmail,
+      email: senderEmail,
+      timestamp,
+      createdAt: timestamp,
+    };
   }
 };
