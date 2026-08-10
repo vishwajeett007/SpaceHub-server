@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -8,7 +9,14 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is not defined");
 }
 
-const adapter = new PrismaPg({ connectionString });
+const pool = new pg.Pool({
+  connectionString,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
+
+const adapter = new PrismaPg(pool);
 
 const globalForPrisma = globalThis;
 
@@ -39,6 +47,7 @@ export const connectDB = async () => {
 export const disconnectDB = async () => {
   try {
     await prisma.$disconnect();
+    await pool.end();
     console.log("Disconnected from the database");
   } catch (error) {
     console.error("Error disconnecting from database:", error);

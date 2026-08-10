@@ -37,6 +37,7 @@ model User {
   sentFriendships     Friendship[]      @relation("UserFriendships")
   receivedFriendships Friendship[]      @relation("TargetFriendships")
 
+  @@index([createdAt])
   @@map("users")
 }
 
@@ -55,6 +56,9 @@ model Community {
   members     CommunityMember[]
   channels    Channel[]
 
+  @@index([ownerId])
+  @@index([isPrivate])
+  @@index([createdAt])
   @@map("communities")
 }
 
@@ -68,6 +72,9 @@ model CommunityMember {
   community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@unique([userId, communityId])
+  @@index([communityId])
+  @@index([communityId, role])
+  @@index([userId, role])
   @@map("community_members")
 }
 
@@ -81,6 +88,7 @@ model Channel {
   updatedAt   DateTime    @updatedAt
   messages    Message[]
 
+  @@index([communityId])
   @@map("channels")
 }
 
@@ -96,6 +104,10 @@ model Message {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  @@index([channelId, createdAt])
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, senderId, createdAt])
+  @@index([createdAt])
   @@map("messages")
 }
 
@@ -111,5 +123,8 @@ model Friendship {
   friend User @relation("TargetFriendships", fields: [friendId], references: [id], onDelete: Cascade)
 
   @@unique([userId, friendId])
+  @@index([friendId, status])
+  @@index([userId, status])
+  @@index([status])
   @@map("friendships")
 }
