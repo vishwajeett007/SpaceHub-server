@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 
-const otpStore = new Map(); // email -> { otp, expiresAt }
+const otpStore = new Map();
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 
 export const generateAndSendOtp = async (email) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+  const expiresAt = Date.now() + 10 * 60 * 1000;
 
   otpStore.set(email.toLowerCase(), { otp, expiresAt });
 
@@ -38,7 +38,7 @@ export const generateAndSendOtp = async (email) => {
     return { success: true, otp };
   } catch (error) {
     console.error(`[OTP Error] Failed to send email to ${email}:`, error);
-    // Even if mail fails, log the OTP in dev mode so testing is never blocked
+
     console.log(`[DEV OTP FALLBACK] OTP for ${email}: ${otp}`);
     return { success: true, otp, devMode: true };
   }
@@ -48,7 +48,7 @@ export const verifyOtpCode = (email, inputOtp) => {
   if (!email || !inputOtp) return false;
   const record = otpStore.get(email.toLowerCase());
   if (!record) {
-    // Fallback for development / initial demo if record lost on restart
+
     console.warn(`[OTP Warning] No stored OTP for ${email}, allowing standard testing code if needed.`);
     return true;
   }

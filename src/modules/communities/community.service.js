@@ -315,7 +315,6 @@ export const joinCommunity = async (userId, identifier) => {
     };
   }
 
-  // Create pending membership request
   const membership = await prisma.communityMember.create({
     data: {
       userId,
@@ -324,7 +323,6 @@ export const joinCommunity = async (userId, identifier) => {
     },
   });
 
-  // Real-time notification to owner and admins
   await notifyAdminsOfJoinRequest(userId, community, membership.id);
 
   return {

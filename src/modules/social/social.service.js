@@ -173,7 +173,6 @@ export const sendFriendRequest = async (currentUserId, friendIdentifier) => {
     },
   });
 
-  // Fetch sender info for real-time notification
   const sender = await prisma.user.findUnique({
     where: { id: currentUserId },
     select: {
@@ -201,7 +200,6 @@ export const sendFriendRequest = async (currentUserId, friendIdentifier) => {
       createdAt: newFriendship.createdAt,
     };
 
-    // Push real-time WS notification to target user
     notifyUser(targetUser.email, "friend_request", notificationData);
   }
 
@@ -242,7 +240,7 @@ export const respondToFriendRequest = async (currentUserId, requesterIdentifier,
       },
     });
   } else {
-    // Attempt to lookup by friendship ID directly
+
     friendship = await prisma.friendship.findUnique({
       where: { id: requesterIdentifier },
     });

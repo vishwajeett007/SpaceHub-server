@@ -140,3 +140,17 @@ model Friendship {
   @@index([status])
   @@map("friendships")
 }
+
+model CommunityRoom {
+  id          String    @id @default(uuid())
+  communityId String
+  name        String
+  roomCode    String    @unique
+  chatRooms   String[]  @default([])
+  voiceRooms  String[]  @default([])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([communityId])
+  @@map("community_rooms")
+}

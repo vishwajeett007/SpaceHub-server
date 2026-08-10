@@ -31,13 +31,11 @@ import { AppError } from "../../shared/errors/AppError.js";
 
 const router = Router();
 
-// Public Community Listings & Search
 router.get("/", getCommunitiesHandler);
 router.get("/all", getCommunitiesHandler);
 router.get("/discover", getCommunitiesHandler);
 router.get("/search", getCommunitiesHandler);
 
-// Public Local Group Listings
 router.get("/local-group/all", getLocalGroupsHandler);
 router.get("/local-group/:groupId", getCommunityBySlugHandler);
 router.get("/local-group/:groupId/members", getCommunityMembersHandler);
@@ -47,14 +45,12 @@ router.get("/local-group/:groupId/settings", (req, res) => {
 
 router.use(protect);
 
-// Create Community & Local Group
 router.post("/", validateRequest(createCommunitySchema), createCommunityHandler);
 router.post("/create", validateRequest(createCommunitySchema), createCommunityHandler);
 router.post("/local-group/create", validateRequest(createCommunitySchema), createCommunityHandler);
 
 router.get("/my-communities", getMyCommunitiesHandler);
 
-// Membership, Join & Role Management
 router.post("/requestJoin", (req, res, next) => {
   req.params.id = req.body.communityId || req.body.communityName;
   return joinCommunityHandler(req, res, next);
@@ -141,7 +137,6 @@ router.post("/:communityId/upload-banner", upload.any(), async (req, res, next) 
   }
 });
 
-// Community Invites
 router.post("/invites/:communityId/create", (req, res) => {
   const communityId = req.params.communityId;
   const inviteCode = `INV_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -163,7 +158,7 @@ router.get("/localgroup/invites/list/:groupId", (req, res) => {
 router.post("/localgroup/invites/accept", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Joined local group via invite link");
 });
-// Rooms inside Communities
+
 router.get("/:communityId/rooms/all", async (req, res, next) => {
   try {
     const rooms = await getRoomsForCommunity(req.params.communityId);
@@ -179,9 +174,20 @@ router.post("/:communityId/rooms/create", async (req, res, next) => {
     const roomName = req.body.roomName || "New Group";
 
     if (req.user && communityId) {
-      const community = await prisma.community.findUnique({ where: { id: communityId } });
+      const community = await prisma.community.findFirst({
+        where: {
+          OR: [
+            { id: communityId },
+            { slug: communityId },
+            { name: communityId },
+          ],
+        },
+      });
+
+      const targetId = community ? community.id : communityId;
+
       const member = await prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: req.user.id, communityId } },
+        where: { userId_communityId: { userId: req.user.id, communityId: targetId } },
       });
 
       const isOwner = community && community.ownerId === req.user.id;
@@ -237,7 +243,6 @@ router.delete("/:communityId/rooms/:roomId", async (req, res, next) => {
   }
 });
 
-// Slug route MUST come last to avoid swallowing defined paths
 router.get("/:slug", getCommunityBySlugHandler);
 
 export default router;

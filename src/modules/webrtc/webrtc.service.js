@@ -1,6 +1,5 @@
 import { prisma } from "../../config/prisma.js";
 
-// In-memory Voice Room Session Store for active WebRTC peer tracking
 const activeVoiceRooms = new Map();
 
 export const getOrCreateVoiceSession = async (roomId, userId) => {

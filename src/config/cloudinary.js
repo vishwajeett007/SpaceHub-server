@@ -23,7 +23,7 @@ export const uploadFileToCloudinary = async (fileInput, folder = "spacehub") => 
   }
 
   try {
-    // If fileInput is a multer file object with memory buffer
+
     if (fileInput && fileInput.buffer) {
       return new Promise((resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
@@ -40,7 +40,6 @@ export const uploadFileToCloudinary = async (fileInput, folder = "spacehub") => 
       });
     }
 
-    // If fileInput is a file path string or file object with path
     const filePath = typeof fileInput === "string" ? fileInput : fileInput?.path;
     if (filePath && fs.existsSync(filePath)) {
       const result = await cloudinary.uploader.upload(filePath, {

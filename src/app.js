@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-// import { rateLimit } from "express-rate-limit";
 
 import { env } from "./config/env.js";
 import routes from "./routes.js";
@@ -38,7 +37,6 @@ app.get("/health", (req, res) => {
   });
 });
 
-// SockJS info handshake and transport fallback routes for voice rooms
 app.use((req, res, next) => {
   if (req.path.startsWith("/ws")) {
     if (req.path === "/ws/info" || req.path.endsWith("/info")) {
@@ -60,20 +58,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// const globalLimiter = rateLimit({
-//   windowMs: 15 * 60 * 1000,
-//   limit: 100,
-//   standardHeaders: "draft-8",
-//   legacyHeaders: false,
-//   handler: (req, res) => {
-//     res.status(429).json({
-//       success: false,
-//       message: "Too many requests. Please try again later.",
-//     });
-//   },
-// });
-
-// app.use(globalLimiter);
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -85,10 +69,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
-// Mount API routes under /api/v1
 app.use("/api/v1", routes);
 
-// Handle 404 & Global Error Handling
 app.use(notFoundHandler);
 app.use(errorHandler);
 

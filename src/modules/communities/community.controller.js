@@ -40,7 +40,7 @@ export const getLocalGroupsHandler = async (req, res, next) => {
     if (!userId) {
       return sendResponse(res, HTTP_STATUS.OK, "Local groups retrieved", []);
     }
-    // Local groups are private communities (isPrivate: true)
+
     const groups = await communityService.getUserJoinedCommunities(userId, true);
     return sendResponse(res, HTTP_STATUS.OK, "Local groups retrieved", groups);
   } catch (error) {

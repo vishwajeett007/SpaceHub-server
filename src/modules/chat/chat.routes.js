@@ -15,24 +15,22 @@ const router = Router();
 
 router.use(protect);
 
-// Basic Channel & DM Messages
 router.get("/channel/:channelId", getChannelMessagesHandler);
 router.get("/dm/:userId", getDirectMessagesHandler);
 router.post("/message", validateRequest(sendMessageSchema), sendMessageHandler);
 
-// Generic Rooms & New Chatrooms
 router.post("/rooms/join", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Joined room successfully", { roomCode: req.body?.roomCode });
 });
 router.post("/join", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Joined room successfully", { roomCode: req.body?.roomCode });
 });
-// Chatroom endpoints (Support router mounted at /chat or /new-chatroom)
-const handleChatroomCreate = (req, res) => {
+
+const handleChatroomCreate = async (req, res) => {
   const channelName = req.body?.name || "general";
   const roomCode = req.body?.roomCode;
   if (roomCode && channelName) {
-    addChannelToGroupInStorage(roomCode, channelName, "chat");
+    await addChannelToGroupInStorage(roomCode, channelName, "chat");
   }
   return sendResponse(res, HTTP_STATUS.CREATED, "Chatroom created successfully", {
     id: `cr-${Date.now()}`,
@@ -44,9 +42,9 @@ const handleChatroomCreate = (req, res) => {
 router.post("/new-chatroom/create", handleChatroomCreate);
 router.post("/create", handleChatroomCreate);
 
-const handleChatroomSummary = (req, res) => {
+const handleChatroomSummary = async (req, res) => {
   const roomCode = req.query.roomCode || req.params.roomId || '';
-  const storedChatRooms = roomCode ? getChannelsForGroup(roomCode, 'chat') : [];
+  const storedChatRooms = roomCode ? await getChannelsForGroup(roomCode, 'chat') : [];
   const rooms = storedChatRooms.map((name, idx) => ({ id: `cr-${idx}`, name }));
   return sendResponse(res, HTTP_STATUS.OK, "Chatroom summary retrieved", rooms);
 };
@@ -61,10 +59,9 @@ router.delete("/:chatroomId/delete", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Chatroom deleted successfully");
 });
 
-// Voice Rooms Endpoints (Support router mounted at /chat or /voice-room)
-const handleVoiceRoomsList = (req, res) => {
+const handleVoiceRoomsList = async (req, res) => {
   const groupIdOrCode = req.params.roomId || '';
-  const storedVoiceRooms = groupIdOrCode ? getChannelsForGroup(groupIdOrCode, 'voice') : [];
+  const storedVoiceRooms = groupIdOrCode ? await getChannelsForGroup(groupIdOrCode, 'voice') : [];
   const rooms = storedVoiceRooms.map((name, idx) => ({
     id: `vr-${idx}`,
     name,
@@ -78,11 +75,11 @@ router.get("/list/:roomId", handleVoiceRoomsList);
 router.get("/voice-room/list", handleVoiceRoomsList);
 router.get("/list", handleVoiceRoomsList);
 
-const handleVoiceRoomCreate = (req, res) => {
+const handleVoiceRoomCreate = async (req, res) => {
   const roomName = req.query.roomName || req.body?.roomName || "voice-room";
   const chatRoomId = req.query.chatRoomId || req.body?.chatRoomId;
   if (chatRoomId && roomName) {
-    addChannelToGroupInStorage(chatRoomId, roomName, "voice");
+    await addChannelToGroupInStorage(chatRoomId, roomName, "voice");
   }
   return sendResponse(res, HTTP_STATUS.CREATED, "Voice room created successfully", {
     id: `vr-${Date.now()}`,

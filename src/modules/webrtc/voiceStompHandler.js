@@ -1,7 +1,7 @@
-// Voice Room STOMP Protocol Handler for WebRTC signaling and multi-user audio sessions
 
-const subscriptions = new Map(); // socket -> Map(subId -> destination)
-const voiceRoomUsers = new Map(); // roomId -> Map(userId -> { socket, subIdAnswer, subIdEvents })
+
+const subscriptions = new Map();
+const voiceRoomUsers = new Map();
 
 export function parseStompFrame(rawText) {
   const text = rawText.toString().replace(/\0$/, '');
@@ -40,7 +40,7 @@ export function formatStompFrame(command, headers = {}, body = '') {
 export function handleVoiceStompMessage(ws, rawMessage) {
   try {
     const text = rawMessage.toString();
-    if (text === '\n' || text === '\r\n') return; // Stomp heartbeats
+    if (text === '\n' || text === '\r\n') return;
 
     const frame = parseStompFrame(text);
 
@@ -78,7 +78,7 @@ export function handleVoiceStompMessage(ws, rawMessage) {
       try {
         payload = JSON.parse(frame.body || '{}');
       } catch (e) {
-        // Body is not JSON
+
       }
 
       if (destination === '/app/register') {
@@ -90,7 +90,6 @@ export function handleVoiceStompMessage(ws, rawMessage) {
         }
         const roomMap = voiceRoomUsers.get(roomId);
 
-        // Notify other participants in this voice room that a new user joined
         roomMap.forEach((userSession, existingUserId) => {
           if (userSession.ws !== ws && userSession.ws.readyState === 1) {
             sendStompMessage(userSession.ws, `/topic/room/${roomId}/events`, {
@@ -100,10 +99,8 @@ export function handleVoiceStompMessage(ws, rawMessage) {
           }
         });
 
-        // Add current user to room
         roomMap.set(userId, { ws, userId, roomId });
 
-        // Send joined confirmation for existing participants to the joining user
         roomMap.forEach((userSession, existingUserId) => {
           if (existingUserId !== userId && ws.readyState === 1) {
             sendStompMessage(ws, `/topic/room/${roomId}/events`, {
@@ -120,7 +117,6 @@ export function handleVoiceStompMessage(ws, rawMessage) {
         const { userId, roomId, sdp } = payload;
         const roomMap = voiceRoomUsers.get(roomId);
 
-        // Relay WebRTC offer to other participants or return synthesized answer if solo
         let relayed = false;
         if (roomMap) {
           roomMap.forEach((userSession, otherUserId) => {
@@ -134,7 +130,6 @@ export function handleVoiceStompMessage(ws, rawMessage) {
           });
         }
 
-        // Return SDP answer to complete peer connection setup
         const sdpAnswer = (sdp || '')
           .replace(/a=sendrecv/g, 'a=recvonly')
           .replace(/a=setup:actpass/g, 'a=setup:active');
@@ -183,7 +178,6 @@ export function handleVoiceStompDisconnect(ws) {
       const roomMap = voiceRoomUsers.get(roomId);
       roomMap.delete(userId);
 
-      // Notify remaining room participants
       roomMap.forEach((userSession) => {
         if (userSession.ws.readyState === 1) {
           sendStompMessage(userSession.ws, `/topic/room/${roomId}/events`, {

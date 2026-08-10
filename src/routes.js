@@ -12,7 +12,6 @@ import { getChannelsForGroup, addChannelToGroupInStorage } from "./modules/commu
 
 const router = Router();
 
-// ── Canonical module mounts ──
 router.use("/auth", authRoutes);
 router.use("/users", userRoutes);
 router.use("/communities", communityRoutes);
@@ -20,45 +19,36 @@ router.use("/chat", chatRoutes);
 router.use("/social", socialRoutes);
 router.use("/webrtc", webrtcRoutes);
 
-// ── Alias mounts for frontend compatibility ──
-
-// Auth routes at root (register, login, forgot-password, etc.)
 router.use("/", authRoutes);
 
-// User/Profile routes
 router.use("/profile", userRoutes);
 router.use("/dashboard", userRoutes);
 router.use("/files", userRoutes);
 
-// Community routes
 router.use("/community", communityRoutes);
 router.use("/local-group", communityRoutes);
 router.use("/localgroup", communityRoutes);
 
-// Chat routes (new-chatroom, rooms)
 router.use("/new-chatroom", chatRoutes);
 router.use("/rooms", chatRoutes);
 
-// Social routes at root so /search, /friends/*, /notifications/*, /messages/* all resolve
 router.use("/", socialRoutes);
 
-// ── Voice Room routes (separate to avoid /create conflict with chatroom) ──
 const voiceRoomRouter = Router();
 voiceRoomRouter.use(protect);
 
-// Helper: Generate a unique janusRoomId scoped to group + room name
 const generateJanusRoomId = (groupId, roomName) => {
   const combined = `${groupId || ''}::${roomName || ''}`;
   const hash = combined.split('').reduce((acc, char) => {
     acc = ((acc << 5) - acc) + char.charCodeAt(0);
-    return acc & acc; // Convert to 32bit integer
+    return acc & acc;
   }, 0);
   return `vr_${groupId}_${Math.abs(hash).toString(36)}`;
 };
 
-voiceRoomRouter.get("/list/:roomId", (req, res) => {
+voiceRoomRouter.get("/list/:roomId", async (req, res) => {
   const groupIdOrCode = req.params.roomId || '';
-  const storedVoiceRooms = groupIdOrCode ? getChannelsForGroup(groupIdOrCode, 'voice') : [];
+  const storedVoiceRooms = groupIdOrCode ? await getChannelsForGroup(groupIdOrCode, 'voice') : [];
   const rooms = storedVoiceRooms.map((name, idx) => {
     return {
       id: `vr-${idx}`,
@@ -75,11 +65,11 @@ voiceRoomRouter.get("/list", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Voice rooms list retrieved", []);
 });
 
-voiceRoomRouter.post("/create", (req, res) => {
+voiceRoomRouter.post("/create", async (req, res) => {
   const roomName = req.query.roomName || req.body?.roomName || "voice-room";
   const chatRoomId = req.query.chatRoomId || req.body?.chatRoomId;
   if (chatRoomId && roomName) {
-    addChannelToGroupInStorage(chatRoomId, roomName, "voice");
+    await addChannelToGroupInStorage(chatRoomId, roomName, "voice");
   }
   const janusRoomId = generateJanusRoomId(chatRoomId, roomName);
   return sendResponse(res, HTTP_STATUS.CREATED, "Voice room created successfully", {

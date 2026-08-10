@@ -26,10 +26,8 @@ const router = Router();
 
 router.use(protect);
 
-// User & Friend Search
 router.get("/search", searchUsersHandler);
 
-// Friends Management
 router.post("/friends/request", validateRequest(friendRequestSchema), sendFriendRequestHandler);
 router.post("/request", validateRequest(friendRequestSchema), sendFriendRequestHandler);
 
@@ -49,7 +47,6 @@ router.post("/respond", validateRequest(respondFriendRequestSchema), respondFrie
 router.post("/friends/remove", removeFriendHandler);
 router.post("/remove", removeFriendHandler);
 
-// Direct Friend Messaging & Chat History
 const handleSendMessage = async (req, res) => {
   const userEmail = req.user?.email || req.body.userEmail || req.body.senderEmail;
   const friendEmail = req.body.friendEmail || req.body.receiverEmail;
@@ -87,7 +84,6 @@ const handleGetChatHistory = async (req, res) => {
 router.get("/friends/messages", handleGetChatHistory);
 router.get("/messages/chat", handleGetChatHistory);
 
-// Notifications
 router.get("/notifications", getNotificationsHandler);
 router.delete("/notifications/reference/:referenceId", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Notification deleted by reference ID");

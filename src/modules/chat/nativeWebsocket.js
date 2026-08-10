@@ -5,7 +5,6 @@ import { getPendingCommunityRequests } from "../communities/community.service.js
 import { getRoomMessagesFromStorage, saveRoomMessageToStorage } from "../communities/communityMessageStorage.js";
 import { getDirectMessagesFromStorage, saveDirectMessageToStorage } from "../social/directMessageStorage.js";
 
-// Store active native WebSocket client connections
 const directChatConnections = new Map();
 const notificationConnections = new Map();
 const roomConnectionsMap = new Map();
@@ -91,7 +90,7 @@ export const initializeNativeWebSockets = (httpServer) => {
       const { pathname, query } = parse(request.url, true);
 
       if (pathname && pathname.includes("/socket.io")) {
-        // Let Socket.IO handle engine.io upgrades
+
         return;
       }
 
@@ -132,7 +131,6 @@ export const initializeNativeWebSockets = (httpServer) => {
 
         console.log(`🔌 Client ${userKey} joined room WS: ${roomCode}`);
 
-        // Send existing room message history to the newly connected client
         getRoomMessagesFromStorage(roomCode).then((history) => {
           if (history && history.length > 0 && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -143,7 +141,7 @@ export const initializeNativeWebSockets = (httpServer) => {
           }
         }).catch(console.error);
       } else if (receiverEmailKey) {
-        // Direct chat history on WS connection
+
         getDirectMessagesFromStorage(userKey, receiverEmailKey).then((history) => {
           if (history && history.length > 0 && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -185,14 +183,12 @@ export const initializeNativeWebSockets = (httpServer) => {
             createdAt: parsed.timestamp || parsed.createdAt || new Date().toISOString(),
           };
 
-          // Persist message if in a room or direct chat
           if (targetRoomCode) {
             await saveRoomMessageToStorage(targetRoomCode, messagePayload);
           } else if (receiverKey) {
             await saveDirectMessageToStorage(messagePayload);
           }
 
-          // Broadcast to all clients connected to this room
           if (targetRoomCode && roomConnectionsMap.has(targetRoomCode)) {
             const clients = roomConnectionsMap.get(targetRoomCode);
             clients.forEach((clientSocket) => {
@@ -201,13 +197,12 @@ export const initializeNativeWebSockets = (httpServer) => {
               }
             });
           } else {
-            // Echo back to sender if not in a multi-client room
+
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify(messagePayload));
             }
           }
 
-          // Forward to direct message receiver if present
           if (receiverKey && directChatConnections.has(receiverKey)) {
             const receiverSocket = directChatConnections.get(receiverKey);
             if (receiverSocket && receiverSocket !== ws && receiverSocket.readyState === WebSocket.OPEN) {
@@ -237,7 +232,6 @@ export const initializeNativeWebSockets = (httpServer) => {
 
       console.log(`🔔 Notification WS connected: ${email}`);
 
-      // Send current pending friend requests immediately on connect
       sendPendingFriendRequests(email, ws);
 
       ws.on("message", (rawMsg) => {
@@ -260,9 +254,9 @@ export const initializeNativeWebSockets = (httpServer) => {
         console.log(`🔔 Notification WS disconnected: ${email}`);
       });
     } else {
-      // Generic WebRTC / STOMP fallback
+
       ws.on("message", (message) => {
-        // Broadcast signaling to all clients except sender
+
         wss.clients.forEach((client) => {
           if (client !== ws && client.readyState === WebSocket.OPEN) {
             client.send(message.toString());

@@ -9,15 +9,12 @@ import { verifyRegisterOtp, resendOtp } from "./auth.service.js";
 
 const router = Router();
 
-// Registration & Login
 router.post("/register", validateRequest(registerSchema), registerHandler);
 router.post("/login", validateRequest(loginSchema), loginHandler);
 
-// Current User & Logout
 router.get("/me", protect, getMeHandler);
 router.post("/logout", protect, logoutHandler);
 
-// Forgot & Reset Password
 const handleForgotPassword = (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Password reset link/code sent to your email", { email: req.body.email || req.body.identifier });
 };
@@ -29,7 +26,6 @@ const handleResetPassword = (req, res) => {
 router.post("/forgot-password", validateRequest(forgotPasswordSchema), handleForgotPassword);
 router.post("/reset-password", validateRequest(resetPasswordSchema), handleResetPassword);
 
-// OTP Verification & Resend Endpoints
 router.post("/validate-forgot-otp", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "OTP validated successfully", { valid: true });
 });

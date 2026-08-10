@@ -13,7 +13,6 @@ const router = Router();
 
 router.use(protect);
 
-// Profile Retrieval & Update
 router.get("/profile", getProfileHandler);
 router.get("/getProfile", getProfileHandler);
 
@@ -23,7 +22,6 @@ router.put("/updateProfile", validateRequest(updateProfileSchema), updateProfile
 
 router.post("/set-username", updateProfileHandler);
 
-// Avatar & Cover Uploads
 router.post("/avatar", upload.single("file"), async (req, res, next) => {
   try {
     let avatarUrl = req.user.avatarUrl;
@@ -57,7 +55,6 @@ router.post("/cover", upload.single("file"), async (req, res, next) => {
   }
 });
 
-// File Uploads & Download URLs
 router.post("/upload-and-get-url", upload.single("file"), async (req, res, next) => {
   try {
     let fileUrl = "https://spacehub.monu14.me/files/sample-file.png";
@@ -81,7 +78,6 @@ router.post("/presigned/download", (req, res) => {
   });
 });
 
-// Welcome Email & Account Delete
 router.post("/send-email", (req, res) => {
   return sendResponse(res, HTTP_STATUS.OK, "Welcome email sent successfully");
 });
