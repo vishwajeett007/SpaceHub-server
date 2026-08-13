@@ -1,6 +1,8 @@
 import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import {
   createCommunityHandler,
+  discoverCommunitiesHandler,
   getCommunitiesHandler,
   getMyCommunitiesHandler,
   getLocalGroupsHandler,
@@ -9,6 +11,7 @@ import {
   leaveCommunityHandler,
   acceptJoinRequestHandler,
   rejectJoinRequestHandler,
+  searchCommunitiesHandler,
   getCommunityMembersHandler,
 } from "./community.controller.js";
 import { createCommunitySchema } from "./community.schema.js";
@@ -25,29 +28,58 @@ import {
 import * as communityService from "./community.service.js";
 import { upload } from "../../shared/middlewares/uploadMiddleware.js";
 import { uploadFileToCloudinary } from "../../config/cloudinary.js";
-import { prisma } from "../../config/prisma.js";
-import { ROLES } from "../../shared/constants/roles.js";
+import { env } from "../../config/env.js";
 import { AppError } from "../../shared/errors/AppError.js";
 
 const router = Router();
 
 router.get("/", getCommunitiesHandler);
 router.get("/all", getCommunitiesHandler);
-router.get("/discover", getCommunitiesHandler);
-router.get("/search", getCommunitiesHandler);
-
-router.get("/local-group/all", getLocalGroupsHandler);
-router.get("/local-group/:groupId", getCommunityBySlugHandler);
-router.get("/local-group/:groupId/members", getCommunityMembersHandler);
-router.get("/local-group/:groupId/settings", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Local group settings retrieved", {});
-});
+router.get("/discover", discoverCommunitiesHandler);
+router.get("/search", searchCommunitiesHandler);
 
 router.use(protect);
 
+router.get("/local-group/all", getLocalGroupsHandler);
+router.get("/local-group/:groupId", async (req, res, next) => {
+  try {
+    await communityService.assertCommunityMember(req.params.groupId, req.user.id);
+    return getCommunityBySlugHandler(req, res, next);
+  } catch (error) {
+    next(error);
+  }
+});
+router.get("/local-group/:groupId/members", getCommunityMembersHandler);
+router.get("/local-group/:groupId/join-requests", async (req, res, next) => {
+  try {
+    const community = await communityService.assertCommunityAdmin(req.params.groupId, req.user.id);
+    const requests = await communityService.getPendingCommunityRequests(req.user.id);
+    return sendResponse(
+      res,
+      HTTP_STATUS.OK,
+      "Local group join requests retrieved",
+      requests.filter((request) => request.communityId === community.id),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+router.get("/local-group/:groupId/settings", async (req, res, next) => {
+  try {
+    await communityService.assertCommunityMember(req.params.groupId, req.user.id);
+    const group = await communityService.getCommunityBySlug(req.params.groupId);
+    return sendResponse(res, HTTP_STATUS.OK, "Local group settings retrieved", group);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/", validateRequest(createCommunitySchema), createCommunityHandler);
 router.post("/create", validateRequest(createCommunitySchema), createCommunityHandler);
-router.post("/local-group/create", validateRequest(createCommunitySchema), createCommunityHandler);
+router.post("/local-group/create", validateRequest(createCommunitySchema), (req, res, next) => {
+  req.body.isPrivate = true;
+  return createCommunityHandler(req, res, next);
+});
 
 router.get("/my-communities", getMyCommunitiesHandler);
 
@@ -69,7 +101,7 @@ router.post("/delete", async (req, res, next) => {
     if (!identifier) {
       throw new AppError("Community identifier is required", HTTP_STATUS.BAD_REQUEST);
     }
-    await communityService.deleteCommunityByNameOrId(identifier);
+    await communityService.deleteCommunityByNameOrId(req.user.id, identifier);
     return sendResponse(res, HTTP_STATUS.OK, "Community deleted successfully");
   } catch (err) {
     next(err);
@@ -84,7 +116,7 @@ router.post("/changeRole", async (req, res, next) => {
     if (!communityId || !targetUserEmail || !newRole) {
       throw new AppError("communityId, targetUserEmail, and newRole are required", HTTP_STATUS.BAD_REQUEST);
     }
-    const updated = await communityService.updateMemberRole(communityId, targetUserEmail, newRole);
+    const updated = await communityService.updateMemberRole(req.user.id, communityId, targetUserEmail, newRole);
     return sendResponse(res, HTTP_STATUS.OK, "Member role updated successfully", updated);
   } catch (err) {
     next(err);
@@ -97,7 +129,7 @@ router.post("/removeMember", async (req, res, next) => {
     if (!communityId || !targetUserEmail) {
       throw new AppError("communityId and targetUserEmail are required", HTTP_STATUS.BAD_REQUEST);
     }
-    await communityService.removeMemberFromCommunity(communityId, targetUserEmail);
+    await communityService.removeMemberFromCommunity(req.user.id, communityId, targetUserEmail);
     return sendResponse(res, HTTP_STATUS.OK, "Member removed from community");
   } catch (err) {
     next(err);
@@ -125,7 +157,7 @@ router.post("/:communityId/upload-banner", upload.any(), async (req, res, next) 
       }
     }
 
-    const updated = await communityService.updateCommunityProfile(communityId, {
+    const updated = await communityService.updateCommunityProfile(req.user.id, communityId, {
       name,
       description,
       avatarUrl,
@@ -137,31 +169,60 @@ router.post("/:communityId/upload-banner", upload.any(), async (req, res, next) 
   }
 });
 
-router.post("/invites/:communityId/create", (req, res) => {
-  const communityId = req.params.communityId;
-  const inviteCode = `INV_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-  const inviteLink = `${req.headers.origin || "http://localhost:5173"}/invite/${communityId}/${inviteCode}`;
-  return sendResponse(res, HTTP_STATUS.OK, "Community invite link generated", { inviteCode, inviteLink });
+router.post("/invites/:communityId/create", async (req, res, next) => {
+  try {
+    const communityId = req.params.communityId;
+    const invite = await communityService.createCommunityInvite(req.user.id, communityId, {
+      expiresInHours: req.body.expiresInHours,
+    });
+    const inviteLink = `${env.FRONTEND_URL}/invite/${invite.communityId}/${encodeURIComponent(invite.inviteCode)}`;
+    return sendResponse(res, HTTP_STATUS.OK, "Community invite link generated", { ...invite, inviteLink });
+  } catch (error) {
+    next(error);
+  }
 });
-router.post("/invites/accept", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Joined community via invite link");
+router.post("/invites/accept", async (req, res, next) => {
+  try {
+    const result = await communityService.acceptCommunityInvite(req.user.id, req.body);
+    return sendResponse(res, HTTP_STATUS.OK, "Joined community via invite link", result);
+  } catch (error) {
+    next(error);
+  }
 });
-router.post("/localgroup/invites/create/:groupId", (req, res) => {
-  const groupId = req.params.groupId;
-  const inviteCode = `LG_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-  const inviteLink = `${req.headers.origin || "http://localhost:5173"}/localgroup/invite/${groupId}/${inviteCode}`;
-  return sendResponse(res, HTTP_STATUS.OK, "Local group invite link generated", { inviteCode, inviteLink });
+router.post("/localgroup/invites/create/:groupId", async (req, res, next) => {
+  try {
+    const groupId = req.params.groupId;
+    const invite = await communityService.createCommunityInvite(req.user.id, groupId, {
+      isLocalGroup: true,
+      expiresInHours: req.body.expiresInHours,
+    });
+    const inviteLink = `${env.FRONTEND_URL}/localgroup/invite/${invite.communityId}/${encodeURIComponent(invite.inviteCode)}`;
+    return sendResponse(res, HTTP_STATUS.OK, "Local group invite link generated", { ...invite, inviteLink });
+  } catch (error) {
+    next(error);
+  }
 });
-router.get("/localgroup/invites/list/:groupId", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Local group invites retrieved", []);
+router.get("/localgroup/invites/list/:groupId", async (req, res, next) => {
+  try {
+    await communityService.assertCommunityAdmin(req.params.groupId, req.user.id);
+    return sendResponse(res, HTTP_STATUS.OK, "Local group invites retrieved", []);
+  } catch (error) {
+    next(error);
+  }
 });
-router.post("/localgroup/invites/accept", (req, res) => {
-  return sendResponse(res, HTTP_STATUS.OK, "Joined local group via invite link");
+router.post("/localgroup/invites/accept", async (req, res, next) => {
+  try {
+    const result = await communityService.acceptCommunityInvite(req.user.id, req.body, { isLocalGroup: true });
+    return sendResponse(res, HTTP_STATUS.OK, "Joined local group via invite link", result);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get("/:communityId/rooms/all", async (req, res, next) => {
   try {
-    const rooms = await getRoomsForCommunity(req.params.communityId);
+    const community = await communityService.assertCommunityMember(req.params.communityId, req.user.id);
+    const rooms = await getRoomsForCommunity(community.id);
     return sendResponse(res, HTTP_STATUS.OK, "Community rooms retrieved", rooms);
   } catch (err) {
     next(err);
@@ -171,45 +232,24 @@ router.get("/:communityId/rooms/all", async (req, res, next) => {
 router.post("/:communityId/rooms/create", async (req, res, next) => {
   try {
     const communityId = req.params.communityId;
-    const roomName = req.body.roomName || "New Group";
-
-    if (req.user && communityId) {
-      const community = await prisma.community.findFirst({
-        where: {
-          OR: [
-            { id: communityId },
-            { slug: communityId },
-            { name: communityId },
-          ],
-        },
-      });
-
-      const targetId = community ? community.id : communityId;
-
-      const member = await prisma.communityMember.findUnique({
-        where: { userId_communityId: { userId: req.user.id, communityId: targetId } },
-      });
-
-      const isOwner = community && community.ownerId === req.user.id;
-      const isAdmin = member && (member.role === ROLES.ADMIN || member.role === ROLES.OWNER);
-
-      if (!isOwner && !isAdmin) {
-        throw new AppError("Only community admins and owners can create groups", HTTP_STATUS.FORBIDDEN);
-      }
+    const roomName = String(req.body.roomName || "New Group").trim();
+    const community = await communityService.assertCommunityAdmin(communityId, req.user.id);
+    if (!roomName) {
+      throw new AppError("Room name is required", HTTP_STATUS.BAD_REQUEST);
     }
 
-    const existingRooms = await getRoomsForCommunity(communityId);
+    const existingRooms = await getRoomsForCommunity(community.id);
     let room = existingRooms.find((r) => (r.name || r.roomName || '').toLowerCase() === roomName.toLowerCase());
     if (!room) {
       room = {
-        id: `group-${Date.now()}`,
+        id: randomUUID(),
         name: roomName,
         roomName: roomName,
-        roomCode: `ROOM-${Math.floor(1000 + Math.random() * 9000)}`,
+        roomCode: `ROOM-${randomUUID()}`,
         chatRooms: [],
         voiceRooms: [],
       };
-      await saveRoomForCommunity(communityId, room);
+      await saveRoomForCommunity(community.id, room);
     }
 
     return sendResponse(res, HTTP_STATUS.CREATED, "Room created inside community", room);
@@ -221,6 +261,7 @@ router.post("/:communityId/rooms/create", async (req, res, next) => {
 router.put("/:communityId/rooms/:roomId/rename", async (req, res, next) => {
   try {
     const { communityId, roomId } = req.params;
+    await communityService.assertCommunityAdmin(communityId, req.user.id);
     const newRoomName = req.body.newRoomName || req.body.name;
     if (!newRoomName) {
       throw new AppError("New room name is required", HTTP_STATUS.BAD_REQUEST);
@@ -236,6 +277,7 @@ router.delete("/:communityId/rooms/:roomId", async (req, res, next) => {
   try {
     const communityId = req.params.communityId;
     const roomId = req.params.roomId;
+    await communityService.assertCommunityAdmin(communityId, req.user.id);
     await deleteRoomForCommunity(communityId, roomId);
     return sendResponse(res, HTTP_STATUS.OK, "Community room deleted");
   } catch (err) {

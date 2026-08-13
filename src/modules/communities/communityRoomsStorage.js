@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../../config/prisma.js';
 
 export const getCommunityKeys = async (communityId) => {
@@ -49,9 +50,9 @@ export const getRoomsForCommunity = async (communityId) => {
 export const saveRoomForCommunity = async (communityId, roomData) => {
   try {
     const name = roomData.name || roomData.roomName || 'Group';
-    const roomCode = roomData.roomCode || `ROOM-${Math.floor(1000 + Math.random() * 9000)}`;
+    const roomCode = roomData.roomCode || `ROOM-${randomUUID()}`;
 
-    await prisma.communityRoom.upsert({
+    return await prisma.communityRoom.upsert({
       where: { roomCode },
       update: {
         name,
@@ -69,6 +70,7 @@ export const saveRoomForCommunity = async (communityId, roomData) => {
     });
   } catch (err) {
     console.error('Failed to save room for community to DB:', err);
+    throw err;
   }
 };
 
@@ -87,6 +89,7 @@ export const deleteRoomForCommunity = async (communityId, roomIdOrName) => {
     });
   } catch (err) {
     console.error('Failed to delete room for community from DB:', err);
+    throw err;
   }
 };
 
@@ -108,6 +111,7 @@ export const renameRoomForCommunity = async (communityId, roomIdOrName, newName)
     });
   } catch (err) {
     console.error('Failed to rename room for community in DB:', err);
+    throw err;
   }
 };
 
@@ -144,6 +148,7 @@ export const addChannelToGroupInStorage = async (roomCodeOrId, channelName, type
     }
   } catch (err) {
     console.error('Failed to add channel to group in DB:', err);
+    throw err;
   }
 };
 

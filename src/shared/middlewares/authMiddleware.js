@@ -21,6 +21,9 @@ export const protect = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token);
+    if (decoded.purpose && decoded.purpose !== "access") {
+      throw new AppError("This token cannot be used to access protected resources.", HTTP_STATUS.UNAUTHORIZED);
+    }
 
     const currentUser = await prisma.user.findUnique({
       where: { id: decoded.userId },
@@ -31,11 +34,15 @@ export const protect = async (req, res, next) => {
         avatarUrl: true,
         firstName: true,
         lastName: true,
+        isVerified: true,
       },
     });
 
     if (!currentUser) {
       throw new AppError("The user belonging to this token no longer exists.", HTTP_STATUS.UNAUTHORIZED);
+    }
+    if (!currentUser.isVerified) {
+      throw new AppError("Please verify your email before accessing this resource.", HTTP_STATUS.UNAUTHORIZED);
     }
 
     req.user = currentUser;

@@ -8,12 +8,16 @@ const COOKIE_OPTIONS = {
   sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
   maxAge: 7 * 24 * 60 * 60 * 1000,
 };
+const CLEAR_COOKIE_OPTIONS = {
+  httpOnly: COOKIE_OPTIONS.httpOnly,
+  secure: COOKIE_OPTIONS.secure,
+  sameSite: COOKIE_OPTIONS.sameSite,
+};
 
 export const registerHandler = async (req, res, next) => {
   try {
     const result = await authService.register(req.body);
-    res.cookie("token", result.token, COOKIE_OPTIONS);
-    return sendResponse(res, HTTP_STATUS.CREATED, "User registered successfully", result);
+    return sendResponse(res, HTTP_STATUS.CREATED, "Registration started. Verify the OTP to activate your account.", result);
   } catch (error) {
     next(error);
   }
@@ -22,7 +26,11 @@ export const registerHandler = async (req, res, next) => {
 export const loginHandler = async (req, res, next) => {
   try {
     const result = await authService.login(req.body);
-    res.cookie("token", result.token, COOKIE_OPTIONS);
+    if (result.pendingVerification) {
+      res.clearCookie("token", CLEAR_COOKIE_OPTIONS);
+    } else {
+      res.cookie("token", result.token, COOKIE_OPTIONS);
+    }
     return sendResponse(res, HTTP_STATUS.OK, "Logged in successfully", result);
   } catch (error) {
     next(error);
@@ -34,6 +42,6 @@ export const getMeHandler = async (req, res) => {
 };
 
 export const logoutHandler = async (req, res) => {
-  res.clearCookie("token", COOKIE_OPTIONS);
+  res.clearCookie("token", CLEAR_COOKIE_OPTIONS);
   return sendResponse(res, HTTP_STATUS.OK, "Logged out successfully");
 };

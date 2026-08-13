@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import nodemailer from "nodemailer";
 
 const otpStore = new Map();
@@ -11,7 +12,7 @@ const transporter = nodemailer.createTransport({
 });
 
 export const generateAndSendOtp = async (email) => {
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const otp = randomInt(100000, 1000000).toString();
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
   otpStore.set(email.toLowerCase(), { otp, expiresAt });
@@ -39,6 +40,11 @@ export const generateAndSendOtp = async (email) => {
   } catch (error) {
     console.error(`[OTP Error] Failed to send email to ${email}:`, error);
 
+    if (process.env.NODE_ENV === "production") {
+      otpStore.delete(email.toLowerCase());
+      throw error;
+    }
+
     console.log(`[DEV OTP FALLBACK] OTP for ${email}: ${otp}`);
     return { success: true, otp, devMode: true };
   }
@@ -48,9 +54,8 @@ export const verifyOtpCode = (email, inputOtp) => {
   if (!email || !inputOtp) return false;
   const record = otpStore.get(email.toLowerCase());
   if (!record) {
-
-    console.warn(`[OTP Warning] No stored OTP for ${email}, allowing standard testing code if needed.`);
-    return true;
+    console.warn(`[OTP Warning] No stored OTP for ${email}.`);
+    return false;
   }
 
   if (Date.now() > record.expiresAt) {
