@@ -1,6 +1,14 @@
 import { prisma } from '../../config/prisma.js';
+import {
+  cacheKey,
+  deleteCachedValues,
+  getOrSetCachedValue,
+} from '../../shared/services/cache.js';
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const LEGACY_DIRECT_MESSAGES_CACHE_TTL_SECONDS = 30;
+const directMessagesCacheKey = (email1, email2) =>
+  cacheKey('legacy-direct-messages', ...[email1, email2].sort());
 
 export const getDirectMessagesFromStorage = async (email1, email2) => {
   const e1 = normalizeEmail(email1);
@@ -8,32 +16,38 @@ export const getDirectMessagesFromStorage = async (email1, email2) => {
   if (!e1 || !e2) return [];
 
   try {
-    const dbMessages = await prisma.message.findMany({
-      where: {
-        OR: [
-          { senderEmail: e1, receiverEmail: e2 },
-          { senderEmail: e2, receiverEmail: e1 },
-        ],
-      },
-      orderBy: { createdAt: 'asc' },
-    });
+    return await getOrSetCachedValue({
+      key: directMessagesCacheKey(e1, e2),
+      ttlSeconds: LEGACY_DIRECT_MESSAGES_CACHE_TTL_SECONDS,
+      loader: async () => {
+        const dbMessages = await prisma.message.findMany({
+          where: {
+            OR: [
+              { senderEmail: e1, receiverEmail: e2 },
+              { senderEmail: e2, receiverEmail: e1 },
+            ],
+          },
+          orderBy: { createdAt: 'asc' },
+        });
 
-    return dbMessages.map((m) => ({
-      id: m.id,
-      content: m.content || m.text || '',
-      text: m.text || m.content || '',
-      message: m.text || m.content || '',
-      type: m.type || (m.fileKey || m.fileUrl ? 'FILE' : 'message'),
-      fileName: m.fileName,
-      fileKey: m.fileKey,
-      fileUrl: m.fileUrl,
-      contentType: m.contentType,
-      senderEmail: m.senderEmail,
-      receiverEmail: m.receiverEmail,
-      email: m.senderEmail,
-      createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
-      timestamp: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
-    }));
+        return dbMessages.map((m) => ({
+          id: m.id,
+          content: m.content || m.text || '',
+          text: m.text || m.content || '',
+          message: m.text || m.content || '',
+          type: m.type || (m.fileKey || m.fileUrl ? 'FILE' : 'message'),
+          fileName: m.fileName,
+          fileKey: m.fileKey,
+          fileUrl: m.fileUrl,
+          contentType: m.contentType,
+          senderEmail: m.senderEmail,
+          receiverEmail: m.receiverEmail,
+          email: m.senderEmail,
+          createdAt: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
+          timestamp: m.createdAt ? m.createdAt.toISOString() : new Date().toISOString(),
+        }));
+      },
+    });
   } catch (dbError) {
     console.error('Error fetching direct messages from database:', dbError);
     return [];
@@ -66,6 +80,8 @@ export const saveDirectMessageToStorage = async (messagePayload) => {
         receiverEmail,
       },
     });
+
+    await deleteCachedValues(directMessagesCacheKey(senderEmail, receiverEmail));
 
     return {
       id: created.id,

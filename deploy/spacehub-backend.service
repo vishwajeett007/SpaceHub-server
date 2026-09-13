@@ -1,0 +1,19 @@
+[Unit]
+Description=SpaceHUB Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=spacehub
+Group=spacehub
+WorkingDirectory=/var/www/spacehub-backend
+EnvironmentFile=/etc/spacehub/backend.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

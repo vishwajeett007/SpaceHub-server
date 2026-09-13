@@ -4,6 +4,7 @@ import helmet from "helmet";
 import cookieParser from "cookie-parser";
 
 import { env } from "./config/env.js";
+import { isRedisReady } from "./config/redis.js";
 import routes from "./routes.js";
 import { notFoundHandler } from "./shared/middlewares/notFoundHandler.js";
 import { errorHandler } from "./shared/middlewares/errorHandler.js";
@@ -30,9 +31,17 @@ app.use(
 );
 
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    success: true,
+  const redisHealthy = !env.REDIS_REQUIRED || isRedisReady();
+
+  res.status(redisHealthy ? 200 : 503).json({
+    success: redisHealthy,
     message: "SpaceHUB backend is healthy",
+    dependencies: {
+      redis: {
+        configured: Boolean(env.REDIS_URL),
+        ready: isRedisReady(),
+      },
+    },
     timestamp: new Date().toISOString(),
   });
 });

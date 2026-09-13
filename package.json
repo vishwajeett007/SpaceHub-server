@@ -5,16 +5,20 @@
   "description": "",
   "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test",
     "dev": "nodemon --ignore 'data/*' src/server.js",
     "start": "node src/server.js",
-    "build": "npm install && npx prisma generate"
+    "build": "npm run prisma:generate",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "ci": "npm run prisma:validate && npm run prisma:generate && npm test"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.10.0",
     "cookie-parser": "^1.4.7",
@@ -28,6 +32,7 @@
     "nodemailer": "^9.0.5",
     "nodemon": "^3.1.14",
     "pg": "^8.22.0",
+    "redis": "^6.2.1",
     "socket.io": "^4.8.3",
     "ws": "^8.21.3",
     "zod": "^4.4.3"

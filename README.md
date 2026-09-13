@@ -6,6 +6,7 @@ The backend service for SpaceHUB, a community and real-time communication platfo
 
 - Node.js and Express 5
 - PostgreSQL with Prisma ORM
+- Redis for chat caching and cross-instance Socket.IO broadcasts
 - Socket.IO and `ws`
 - JSON Web Tokens and HTTP-only cookies
 - Zod request validation
@@ -45,6 +46,11 @@ The backend service for SpaceHUB, a community and real-time communication platfo
    CLOUDINARY_CLOUD_NAME="your-cloud-name"
    CLOUDINARY_API_KEY="your-api-key"
    CLOUDINARY_API_SECRET="your-api-secret"
+
+   # Redis is optional for local development and required when REDIS_REQUIRED=true.
+   REDIS_URL="redis://127.0.0.1:6379"
+   REDIS_REQUIRED=false
+   REDIS_KEY_PREFIX="spacehub:"
    ```
 
 3. Generate the Prisma client and apply the database migrations:
@@ -81,6 +87,21 @@ curl http://localhost:5000/health
 | `CLOUDINARY_CLOUD_NAME` | For uploads | — | Cloudinary cloud name. |
 | `CLOUDINARY_API_KEY` | For uploads | — | Cloudinary API key. |
 | `CLOUDINARY_API_SECRET` | For uploads | — | Cloudinary API secret. |
+| `REDIS_URL` | When Redis is enabled | — | `redis://` or `rediss://` connection URL. |
+| `REDIS_REQUIRED` | No | `false` | Set to `true` in production to fail startup if Redis is unavailable. |
+| `REDIS_KEY_PREFIX` | No | `spacehub:` | Prefix applied to every cache key. |
+
+## Redis
+
+Redis caches chat-history reads for 30 seconds and invalidates the affected cache entry whenever a message is created. When configured, it also enables the Socket.IO Redis adapter, so broadcasts and room membership work correctly across multiple backend instances.
+
+Start a local Redis container with:
+
+```bash
+docker compose -f compose.redis.yml up -d
+```
+
+Then set `REDIS_URL="redis://127.0.0.1:6379"` in `.env`. The Compose port binds only to `127.0.0.1`, so it is not exposed to your network. For production, use a private Redis service with authentication and TLS (`rediss://...`), set `REDIS_REQUIRED=true`, and never expose port 6379 publicly.
 
 Never commit `.env` or production credentials. The JWT fallback is intended only for local development.
 
@@ -133,7 +154,7 @@ These endpoints are protected.
 | `POST` | `/users/upload-and-get-url` | Upload a file and return its URL. |
 | `DELETE` | `/users/delete` | Delete the current account. |
 
-Uploads use in-memory buffers and are limited to 10 MB per file. Cloudinary credentials must be configured for persistent uploads.
+Uploads use in-memory buffers and are limited to 10 MB per file. Cloudinary credentials must be configured for persisten tuploads.
 
 ### Communities
 
@@ -256,3 +277,54 @@ NODE_ENV=production npm start
 ```
 
 Terminate the process with `SIGTERM` or `SIGINT` to allow the HTTP server and database pool to shut down gracefully.
+
+## CI/CD with GitHub Actions
+
+The repository includes [`.github/workflows/backend-ci-cd.yml`](.github/workflows/backend-ci-cd.yml). Every pull request to `main` and every push to `main` installs locked dependencies, validates the Prisma schema, generates the Prisma client, and runs the health-route smoke test. A successful push to `main` then deploys to a Linux server over SSH.
+
+The deploy job is protected by the GitHub `production` environment. Create that environment in **Settings → Environments** and add any required reviewers before enabling deployment.
+
+### One-time server setup
+
+The server must already contain a clone of this backend at `/var/www/spacehub-backend` (or the path you choose). Its `origin` remote must be able to fetch this repository; a read-only GitHub deploy key is a good fit for private repositories. Production configuration stays outside Git and is symlinked into the clone so both Prisma migrations and the running service can read it.
+
+Install the included systemd template after changing the `User`, `Group`, `WorkingDirectory`, and Node path if needed:
+
+```bash
+sudo cp deploy/spacehub-backend.service /etc/systemd/system/spacehub-backend.service
+sudo mkdir -p /etc/spacehub
+sudo chown root:spacehub /etc/spacehub
+sudo chmod 750 /etc/spacehub
+sudo install -m 640 -o root -g spacehub .env /etc/spacehub/backend.env
+sudo ln -s /etc/spacehub/backend.env /var/www/spacehub-backend/.env
+sudo usermod -aG spacehub deploy
+sudo systemctl daemon-reload
+sudo systemctl enable --now spacehub-backend
+```
+
+Run the commands as a user who can read your prepared production `.env`; replace `spacehub`, `deploy`, and `/var/www/spacehub-backend` to match your server. The `deploy` user must log out and in again after its group membership changes.
+
+The deploy user needs passwordless permission to restart only this service. Add the following with `sudo visudo` (replace `deploy` with the SSH user):
+
+```text
+deploy ALL=(root) NOPASSWD: /bin/systemctl restart spacehub-backend
+```
+
+### GitHub deployment secrets
+
+Add these **environment secrets** to the `production` environment:
+
+| Secret | Example | Purpose |
+| --- | --- | --- |
+| `DEPLOY_HOST` | `api.example.com` | Server hostname or IP. |
+| `DEPLOY_PORT` | `22` | SSH port. |
+| `DEPLOY_USER` | `deploy` | Non-root SSH user. |
+| `DEPLOY_SSH_KEY` | private key contents | Key authorized for the deploy user. |
+| `DEPLOY_HOST_FINGERPRINT` | `SHA256:...` | SSH host-key fingerprint for the deploy server. |
+| `DEPLOY_PATH` | `/var/www/spacehub-backend` | Existing backend clone on the server. |
+| `SYSTEMD_SERVICE` | `spacehub-backend` | systemd unit name, without `.service`. |
+| `HEALTHCHECK_URL` | `http://127.0.0.1:5000/health` | URL checked after restart. |
+
+Obtain the host fingerprint from a trusted server administrator or from a known-good connection with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`. Do not leave this secret blank.
+
+The workflow applies committed Prisma migrations before restarting the service. Keep production migrations backward-compatible: an automatic code rollback cannot undo a database migration.

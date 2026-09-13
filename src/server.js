@@ -5,6 +5,11 @@ import { Server as SocketIOServer } from "socket.io";
 import app from "./app.js";
 import { env } from "./config/env.js";
 import { connectDB, disconnectDB } from "./config/prisma.js";
+import { connectRedis, disconnectRedis } from "./config/redis.js";
+import {
+  configureSocketIoRedisAdapter,
+  disconnectSocketIoRedisAdapter,
+} from "./config/socketIoRedisAdapter.js";
 import { initializeChatSockets } from "./modules/chat/chat.socket.js";
 import { initializeWebRTCSockets } from "./modules/webrtc/webrtc.socket.js";
 import { initializeNativeWebSockets } from "./modules/chat/nativeWebsocket.js";
@@ -30,6 +35,8 @@ let isShuttingDown = false;
 async function startServer() {
   try {
     await connectDB();
+    await connectRedis();
+    await configureSocketIoRedisAdapter(io);
 
     httpServer.listen(PORT, () => {
       console.log(`🚀 SpaceHUB Backend running on port ${PORT}`);
@@ -37,6 +44,8 @@ async function startServer() {
     });
   } catch (error) {
     console.error("Failed to start the server:", error);
+    await disconnectSocketIoRedisAdapter();
+    await disconnectRedis();
     await disconnectDB();
     process.exit(1);
   }
@@ -56,6 +65,8 @@ async function shutdown(reason, exitCode = 0) {
 
   const finishShutdown = async () => {
     try {
+      await disconnectSocketIoRedisAdapter();
+      await disconnectRedis();
       await disconnectDB();
       console.log("Database disconnected.");
     } catch (error) {
