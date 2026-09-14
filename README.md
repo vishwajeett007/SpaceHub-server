@@ -66,6 +66,17 @@ The backend service for SpaceHUB, a community and real-time communication platfo
    npm run dev
    ```
 
+5. Optionally add the idempotent demo workspace:
+
+   ```bash
+   DEMO_SEED_PASSWORD="your-demo-password" npm run seed
+   ```
+
+   This creates or updates three verified demo users, 25 public communities,
+   memberships, channels, a room, messages, and two friendships. It never
+   deletes existing records. In production, add `ALLOW_DEMO_SEED=true` to the
+   command only when you deliberately want demo data.
+
 The API is available at `http://localhost:5000/api/v1`. Check that the service is running with:
 
 ```bash
@@ -111,7 +122,8 @@ Never commit `.env` or production credentials. The JWT fallback is intended only
 | --- | --- |
 | `npm run dev` | Run the server with Nodemon and restart when source files change. |
 | `npm start` | Run the server with Node.js. |
-| `npm run build` | Install dependencies and generate the Prisma client. |
+| `npm run build` | Generate the Prisma client. |
+| `npm run seed` | Add or update the idempotent demo workspace. |
 
 There is currently no automated test suite configured.
 

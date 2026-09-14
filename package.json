@@ -11,7 +11,8 @@
     "build": "npm run prisma:generate",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "ci": "npm run prisma:validate && npm run prisma:generate && npm test"
+    "ci": "npm run prisma:validate && npm run prisma:generate && npm test",
+    "seed": "prisma db seed"
   },
   "author": "",
   "license": "ISC",

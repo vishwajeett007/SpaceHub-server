@@ -159,6 +159,7 @@ export const getAllPublicCommunities = async ({ query = "", skip, take } = {}) =
       slug: true,
       description: true,
       avatarUrl: true,
+      bannerUrl: true,
       ownerId: true,
       createdAt: true,
       _count: {
