@@ -322,7 +322,7 @@ Add these **environment secrets** to the `production` environment:
 | `DEPLOY_SSH_KEY` | private key contents | Key authorized for the deploy user. |
 | `DEPLOY_HOST_FINGERPRINT` | `SHA256:...` | SSH host-key fingerprint for the deploy server. |
 | `DEPLOY_PATH` | `/var/www/spacehub-backend` | Existing backend clone on the server. |
-| `SYSTEMD_SERVICE` | `spacehub-backend` | systemd unit name, without `.service`. |
+| `PM2_APP_NAME` | `spacehub-backend` | pm2 process name (from `pm2 ls`) restarted after deploy. |
 | `HEALTHCHECK_URL` | `http://127.0.0.1:5000/health` | URL checked after restart. |
 
 Obtain the host fingerprint from a trusted server administrator or from a known-good connection with `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`. Do not leave this secret blank.
