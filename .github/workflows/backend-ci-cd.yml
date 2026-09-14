@@ -81,14 +81,36 @@ jobs:
             cd "$DEPLOY_PATH"
             previous_revision="$(git rev-parse HEAD)"
 
-            git fetch --depth=1 origin main
+            # npm ci deletes node_modules and needs more memory than the server can spare, so only
+            # reinstall when the lockfile changed or an earlier install left dependencies incomplete.
+            install_dependencies() {
+              if ! git diff --quiet "$1" HEAD -- package-lock.json || ! npm ls --depth=0 > /dev/null 2>&1; then
+                npm ci --no-audit --no-fund
+              fi
+              npx prisma generate
+            }
+
+            rollback() {
+              trap - ERR
+              set +e
+              failed_revision="$(git rev-parse HEAD)"
+              if [ "$failed_revision" = "$previous_revision" ]; then
+                exit 1
+              fi
+              echo "Deployment failed; restoring revision $previous_revision."
+              git reset --hard "$previous_revision"
+              install_dependencies "$failed_revision"
+              pm2 restart "$PM2_APP_NAME" --update-env
+              exit 1
+            }
+            trap rollback ERR
+
+            git fetch origin main
             git checkout --force main
             git reset --hard origin/main
 
-            npm ci
-            npx prisma generate
+            install_dependencies "$previous_revision"
             npx prisma migrate deploy
-            npm prune --omit=dev
             pm2 restart "$PM2_APP_NAME" --update-env
 
             for attempt in {1..15}; do
@@ -98,10 +120,5 @@ jobs:
               sleep 2
             done
 
-            echo "Deployment health check failed; restoring the previous application revision."
-            git reset --hard "$previous_revision"
-            npm ci
-            npx prisma generate
-            npm prune --omit=dev
-            pm2 restart "$PM2_APP_NAME" --update-env
-            exit 1
+            echo "Deployment health check failed."
+            rollback
